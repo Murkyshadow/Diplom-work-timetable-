@@ -101,6 +101,8 @@ class MainWindow(QMainWindow):
             #     model.insertColumn(len(headTable) - 1)
             # if titleTable == "Groups":
             #     addSpinBox()
+            if titleTable == "Teacher":
+                tableData.setColumnHidden(1, True)  # спрятать id для Teacher
             model.insertColumn(len(headTable) - 1)
             setBtnDel()
             tableData.scrollToBottom()   # пролистываем вниз
@@ -111,8 +113,11 @@ class MainWindow(QMainWindow):
             row = tableData.indexAt(btn.pos()).row()
             model.removeRow(row)
             model.select()
-            if 'Groups' == titleTable:
-                model.insertColumn(len(headTable) - 1)
+            if titleTable == "Teacher":
+                tableData.setColumnHidden(1, True)  # спрятать id для Teacher
+            model.insertColumn(len(headTable)-1)    # для удаления
+            # if 'Groups' == titleTable:
+            #     model.insertColumn(len(headTable) - 1)
             # print("нажата кнопка удаления", row, model)
             # print('кол-во строк и колонн', row, model.columnCount())  # кол-во строк
             setBtnDel()
@@ -120,29 +125,22 @@ class MainWindow(QMainWindow):
         def setBtnDel():
             """установка кнопок удаления в таблицу"""
             row = model.rowCount()  # кол-во строк
-
             # tableDel.setColumnCount(1)
             # tableDel.setRowCount(row)
-
-            # print('Таблица:', titleTable)
-            # print('кол-во строк и колонн', row, model.columnCount())  # кол-во строк
-            # print('кол-во строк и колонн', row, model.columnCount())  # кол-во строк
-            # print('кол-во строк и колонн', row, model.columnCount())  # кол-во строк
-            # print('кол-во строк и колонн', row, model.columnCount())  # кол-во строк
+            # if titleTable == "Teacher":
+            #     tableData.setColumnHidden(1, True)  # спрятать id для Teacher
             for y in range(row):
                 btnDel = QPushButton()
                 btnDel.setMaximumSize(48, 1000)
                 btnDel.setStyleSheet("""background-color: rgb(255,255,255); text-align: center;""")
                 i = QIcon("del.png")
                 btnDel.setIcon(QtGui.QIcon(i))
-
                 # tableDel.setCellWidget(y, 0, btnDel)    # для TableWidget
                 tableData.setIndexWidget(model.index(y, len(headTable)-1), btnDel)
                 # tableData.horizontalHeader().setSectionResizeMode(0, 1111)
                 # tableData.horizontalHeader().setSectionResizeMode(1, 111)
                 # tableData.horizontalHeader().setSectionResizeMode(2, 111)
                 btnDel.clicked.connect(lambda: delRowTable())
-
             tableDel.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         def addSpinBox():
@@ -179,7 +177,6 @@ class MainWindow(QMainWindow):
             tableData.verticalHeader().hide()   # спрятать цифры сбоку
             if titleTable == "Teacher":
                 tableData.setColumnHidden(1, True)  # спрятать id для Teacher
-
             model.insertColumn(len(headTable)-1)    # для удаления
 
             for i, head in enumerate(headTable):
