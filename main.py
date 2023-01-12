@@ -82,12 +82,13 @@ class MainWindow(QMainWindow):
         self.ui = PyQt5.uic.loadUi("main.ui")
         self.ui.show()
         setStyle(self.ui)
-        self.tableWithDel(self.ui.tableTeacherDelete, self.ui.tableTeacher, self.ui.btnAddTeacher, ['Учитель', ''], "Teacher")
-        self.tableWithDel(self.ui.tableGroupDelete, self.ui.tableGroup, self.ui.btnAddGroup, ['Группа', 'Курс', ''], "Groups")
+        self.tableWithDel(self.ui.tableTeacher, self.ui.btnAddTeacher, ['Учителя', ''], "Teacher")
+        self.tableWithDel(self.ui.tableGroup, self.ui.btnAddGroup, ['Группы', 'Курс', ''], "Groups")
 
-    def tableWithDel(self, tableDel, tableData, btnAdd, headTable, titleTable):
+    def tableWithDel(self, tableData, btnAdd, headTable, titleTable):
         def addRowTable():
             """добавление строки в таблицу при нажатии на кнопку"""
+            model.submitAll()   # ячейка при добавлении новой может еще редактироваться пользователем, поэтому надо сначала принять введенное
             record = model.record()
             if titleTable == "Teacher":
                 record.remove(record.indexOf("id"))
@@ -96,11 +97,13 @@ class MainWindow(QMainWindow):
                 record.setValue("title", "")
                 record.setValue("courseNumber", 1)
             model.insertRecord(-1, record)
+            model.submitAll()
             model.select()
             # if 'Groups' == titleTable:
             #     model.insertColumn(len(headTable) - 1)
             # if titleTable == "Groups":
             #     addSpinBox()
+
             if titleTable == "Teacher":
                 tableData.setColumnHidden(1, True)  # спрятать id для Teacher
             model.insertColumn(len(headTable) - 1)
@@ -127,8 +130,6 @@ class MainWindow(QMainWindow):
             row = model.rowCount()  # кол-во строк
             # tableDel.setColumnCount(1)
             # tableDel.setRowCount(row)
-            # if titleTable == "Teacher":
-            #     tableData.setColumnHidden(1, True)  # спрятать id для Teacher
             for y in range(row):
                 btnDel = QPushButton()
                 btnDel.setMaximumSize(48, 1000)
@@ -141,7 +142,9 @@ class MainWindow(QMainWindow):
                 # tableData.horizontalHeader().setSectionResizeMode(1, 111)
                 # tableData.horizontalHeader().setSectionResizeMode(2, 111)
                 btnDel.clicked.connect(lambda: delRowTable())
-            tableDel.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            # tableDel.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            print('кол-во строк и колонн после добавления btn', model.rowCount(), model.columnCount())  # кол-во строк
+
 
         def addSpinBox():
             @pyqtSlot()
@@ -182,9 +185,9 @@ class MainWindow(QMainWindow):
             for i, head in enumerate(headTable):
                 model.setHeaderData(i, Qt.Horizontal, head)
 
-            tableData.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustToContents)
-            tableData.resizeColumnsToContents()
-            tableData.resizeRowsToContents()
+            # tableData.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustToContents)
+            # tableData.resizeColumnsToContents()
+            # tableData.resizeRowsToContents()
             return model
 
         # для удаления
@@ -195,6 +198,8 @@ class MainWindow(QMainWindow):
 
         btnAdd.clicked.connect(addRowTable)
         btnAdd.setStyleSheet("""background-color: rgb(255,255,255); text-align: center;""")
+        btnAdd.setMinimumSize(30, 30)
+
         i = QIcon("add.png")
         btnAdd.setIcon(QtGui.QIcon(i))
 
