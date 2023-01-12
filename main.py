@@ -84,11 +84,12 @@ class MainWindow(QMainWindow):
         setStyle(self.ui)
         self.tableWithDel(self.ui.tableTeacher, self.ui.btnAddTeacher, ['Учителя', ''], "Teacher")
         self.tableWithDel(self.ui.tableGroup, self.ui.btnAddGroup, ['Группы', 'Курс', ''], "Groups")
+        self.tableWithDel(self.ui.tableLesson, self.ui.btnAddLesson, ['Занятие', 'Часы', 'Кабинет', 'Учитель', ''], "Lesson")
 
     def tableWithDel(self, tableData, btnAdd, headTable, titleTable):
         def addRowTable():
             """добавление строки в таблицу при нажатии на кнопку"""
-            model.submitAll()   # ячейка при добавлении новой может еще редактироваться пользователем, поэтому надо сначала принять введенное
+            model.submitAll()   # ячейка при добавлении новой может еще редактироваться пользователем, поэтому надо сначала принять введенное (при редактировании нельзя добавить)
             record = model.record()
             if titleTable == "Teacher":
                 record.remove(record.indexOf("id"))
@@ -96,17 +97,20 @@ class MainWindow(QMainWindow):
             elif titleTable == "Groups":
                 record.setValue("title", "")
                 record.setValue("courseNumber", 1)
+            elif titleTable == "Lesson":
+                record.remove(record.indexOf("id"))
+                record.setValue("title", "")
+                record.setValue("hour", "")
+                record.setValue("audienceNumber", "")
+                record.setValue("teacherId", "")
             model.insertRecord(-1, record)
             model.submitAll()
             model.select()
-            # if 'Groups' == titleTable:
-            #     model.insertColumn(len(headTable) - 1)
-            # if titleTable == "Groups":
-            #     addSpinBox()
-
-            if titleTable == "Teacher":
-                tableData.setColumnHidden(1, True)  # спрятать id для Teacher
-            model.insertColumn(len(headTable) - 1)
+            if titleTable == "Groups":
+                setSpinBox()
+            if titleTable == "Teacher" or titleTable == "Lesson":
+                tableData.setColumnHidden(len(headTable)-1, True)  # спрятать id для Teacher
+            model.insertColumn(model.columnCount())
             setBtnDel()
             tableData.scrollToBottom()   # пролистываем вниз
 
@@ -116,11 +120,11 @@ class MainWindow(QMainWindow):
             row = tableData.indexAt(btn.pos()).row()
             model.removeRow(row)
             model.select()
+            if titleTable == "Groups":
+                setSpinBox()
             if titleTable == "Teacher":
-                tableData.setColumnHidden(1, True)  # спрятать id для Teacher
-            model.insertColumn(len(headTable)-1)    # для удаления
-            # if 'Groups' == titleTable:
-            #     model.insertColumn(len(headTable) - 1)
+                tableData.setColumnHidden(len(headTable)-1, True)  # спрятать id для Teacher
+            model.insertColumn(model.columnCount())    # для удаления
             # print("нажата кнопка удаления", row, model)
             # print('кол-во строк и колонн', row, model.columnCount())  # кол-во строк
             setBtnDel()
@@ -137,19 +141,14 @@ class MainWindow(QMainWindow):
                 i = QIcon("del.png")
                 btnDel.setIcon(QtGui.QIcon(i))
                 # tableDel.setCellWidget(y, 0, btnDel)    # для TableWidget
-                tableData.setIndexWidget(model.index(y, len(headTable)-1), btnDel)
+                tableData.setIndexWidget(model.index(y, model.columnCount()-1), btnDel)
                 # tableData.horizontalHeader().setSectionResizeMode(0, 1111)
-                # tableData.horizontalHeader().setSectionResizeMode(1, 111)
-                # tableData.horizontalHeader().setSectionResizeMode(2, 111)
                 btnDel.clicked.connect(lambda: delRowTable())
-            # tableDel.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             print('кол-во строк и колонн после добавления btn', model.rowCount(), model.columnCount())  # кол-во строк
 
-
-        def addSpinBox():
+        def setSpinBox():
             @pyqtSlot()
             def setFromSpinBox():   # вызывается при установке значения в spinBox
-                print('цифорка')
                 spinBox = self.sender()
                 row = tableData.indexAt(spinBox.pos()).row()
                 course = spinBox.value()
@@ -162,6 +161,8 @@ class MainWindow(QMainWindow):
             print('вставляем spinBox')
             for row in range(model.rowCount()):  # кол-во строк
                 spinBox = QSpinBox()
+                spinBox.setMaximum(5)
+                spinBox.setMinimum(1)
                 spinBox.setValue(model.index(row, 1).data())
                 tableData.setIndexWidget(model.index(row, 1), spinBox)
                 spinBox.editingFinished.connect(setFromSpinBox)
@@ -178,24 +179,32 @@ class MainWindow(QMainWindow):
 
             tableData.setModel(model)
             tableData.verticalHeader().hide()   # спрятать цифры сбоку
-            if titleTable == "Teacher":
-                tableData.setColumnHidden(1, True)  # спрятать id для Teacher
-            model.insertColumn(len(headTable)-1)    # для удаления
+            model.insertColumn(model.columnCount())    # для удаления
+            if titleTable == "Teacher" or titleTable == "Lesson":
+                tableData.setColumnHidden(len(headTable)-1, True)  # спрятать id для Teacher or Lesson
+                print(len(headTable)-1)
 
             for i, head in enumerate(headTable):
                 model.setHeaderData(i, Qt.Horizontal, head)
 
             # tableData.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustToContents)
-            # tableData.resizeColumnsToContents()
+            tableData.resizeColumnsToContents()
             # tableData.resizeRowsToContents()
             return model
 
+        def changeTable():
+            print('ячейка изменена')
+            tableData.resizeColumnsToContents()
+
+
         # для удаления
         model = setTableData()
-        # if titleTable == "Groups":
-        #     addSpinBox()  # добавляем spinbox
+        model.dataChanged.connect(changeTable)
+        if titleTable == "Groups":
+            setSpinBox()  # добавляем spinbox
         setBtnDel()
-
+        # if titleTable == "Lesson":
+        #     print(model.index(0, 4).data(), model.columnCount())
         btnAdd.clicked.connect(addRowTable)
         btnAdd.setStyleSheet("""background-color: rgb(255,255,255); text-align: center;""")
         btnAdd.setMinimumSize(30, 30)
