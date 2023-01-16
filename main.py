@@ -220,57 +220,57 @@ class MainWindow(QMainWindow):
                 tableData.setIndexWidget(model.index(row, column), spinBox)
                 spinBox.editingFinished.connect(setFromSpinBox)
 
-        # def setComboBox(column, data):
-        #     def setFromComboBox(data, comboBox = None, rowComboBox = 123, columnComboBox=123):
-        #         """при изменении значении в combobox вставляет это значение в БД"""
-        #         changeTable()
-        #         model.submitAll()
-        #         record = model.record()
-        #         if comboBox is None:
-        #             comboBox = self.sender()
-        #             comboBox.setStyleSheet("""""")
-        #             rowComboBox = tableData.indexAt(comboBox.pos()).row()
-        #         else:
-        #             comboBox.setStyleSheet("""background-color:rgb(255,128,138);""")
-        #         nowTeacher = comboBox.currentText()
-        #
-        #
-        #         for textForSet in list(data.items()):     # ищем id учителя, чтобы вставить его в бд
-        #             if nowTeacher in textForSet:
-        #                 idNowTeacher = textForSet[0]
-        #                 break
-        #         print('ищем id в', list(data.items()))
-        #         print('изменена в комбобоксе на', nowTeacher, idNowTeacher, 'позиция', comboBox, rowComboBox, columnComboBox)
-        #
-        #         for col in range(model.columnCount() - 1):
-        #             record.setValue(col, model.index(rowComboBox, col).data())
-        #             if col == columnComboBox:
-        #                 record.setValue(col, idNowTeacher)
-        #         # for i in range(model.columnCount()):
-        #         #     print(record.value(i), end=' ')
-        #         # model.submitAll()
-        #         model.updateRowInTable(rowComboBox, record)
-        #         model.submitAll()
-        #
-        #     dataForSet = list(data.values())
-        #     print('вставляем в комбобокс', dataForSet)
-        #     for row in range(model.rowCount()):
-        #         comboBox = QComboBox()
-        #         comboBox.addItems(dataForSet)
-        #         tableData.setIndexWidget(model.index(row, column), comboBox)
-        #         rowFalse = tableData.indexAt(comboBox.pos()).row()
-        #         # print('строка', rowFalse, 'на самом деле -', row)
-        #         print('позиция', comboBox, tableData.indexAt(comboBox.pos()).row(), tableData.indexAt(comboBox.pos()).column())
-        #         idTeacher = model.index(row, column).data()     # берем текущее id учителя из таблицы
-        #         if idTeacher != '':
-        #             nowTeacher = data[idTeacher]        # по id находим имя учителя
-        #             indTeacher = dataForSet.index(nowTeacher)
-        #             comboBox.setCurrentIndex(indTeacher)       # вставляем индекс текущее имя в comboBox
-        #             comboBox.currentIndexChanged.connect(lambda: setFromComboBox(data, columnComboBox=column))
-        #         elif comboBox.currentText() != '':
-        #             print('пусто')
-        #             comboBox.currentIndexChanged.connect(lambda: setFromComboBox(data, columnComboBox=column))
-        #             setFromComboBox(data, comboBox, tableData.indexAt(comboBox.pos()).row(), columnComboBox=column)
+        def setComboBox32(column, data):
+            def setFromComboBox32(data, comboBox = None, rowComboBox = 123, columnComboBox=123):
+                """при изменении значении в combobox вставляет это значение в БД"""
+                changeTable()
+                model.submitAll()
+                record = model.record()
+                if comboBox is None:
+                    comboBox = self.sender()
+                    comboBox.setStyleSheet("""""")
+                    rowComboBox = tableData.indexAt(comboBox.pos()).row()
+                else:
+                    comboBox.setStyleSheet("""background-color:rgb(255,128,138);""")
+                nowTeacher = comboBox.currentText()
+
+
+                for textForSet in list(data.items()):     # ищем id учителя, чтобы вставить его в бд
+                    if nowTeacher in textForSet:
+                        idNowTeacher = textForSet[0]
+                        break
+                print('ищем id в', list(data.items()))
+                print('изменена в комбобоксе на', nowTeacher, idNowTeacher, 'позиция', comboBox, rowComboBox, columnComboBox)
+
+                for col in range(model.columnCount() - 1):
+                    record.setValue(col, model.index(rowComboBox, col).data())
+                    if col == columnComboBox:
+                        record.setValue(col, idNowTeacher)
+                # for i in range(model.columnCount()):
+                #     print(record.value(i), end=' ')
+                # model.submitAll()
+                model.updateRowInTable(rowComboBox, record)
+                model.submitAll()
+
+            dataForSet = list(data.values())
+            print('вставляем в комбобокс', dataForSet)
+            for row in range(model.rowCount()):
+                comboBox = QComboBox()
+                comboBox.addItems(dataForSet)
+                tableData.setIndexWidget(model.index(row, column), comboBox)
+                rowFalse = tableData.indexAt(comboBox.pos()).row()
+                # print('строка', rowFalse, 'на самом деле -', row)
+                print('позиция', comboBox, tableData.indexAt(comboBox.pos()).row(), tableData.indexAt(comboBox.pos()).column())
+                idTeacher = model.index(row, column).data()     # берем текущее id учителя из таблицы
+                if idTeacher != '':
+                    nowTeacher = data[idTeacher]        # по id находим имя учителя
+                    indTeacher = dataForSet.index(nowTeacher)
+                    comboBox.setCurrentIndex(indTeacher)       # вставляем индекс текущее имя в comboBox
+                    comboBox.currentIndexChanged.connect(lambda: setFromComboBox(data, columnComboBox=column))
+                elif comboBox.currentText() != '':
+                    print('пусто')
+                    comboBox.currentIndexChanged.connect(lambda: setFromComboBox(data, columnComboBox=column))
+                    setFromComboBox(data, comboBox, tableData.indexAt(comboBox.pos()).row(), columnComboBox=column)
 
         def setComboBox(column, data):
             """
@@ -279,21 +279,27 @@ class MainWindow(QMainWindow):
             :param data: данные для вставки {id:data}
             """
             def setFromComboBox():
-                '''при изменении комбобокса'''
+                '''при изменении значении в combobox вставляем это значение в БД'''
                 print('комбобокс изменен')
+                comboBox = self.sender()
+                comboBox.setStyleSheet("""""")
+                rowComboBox = tableData.indexAt(comboBox.pos()).row()
+                columnComboBox = tableData.indexAt(comboBox.pos()).column()
+                id = int(comboBox.currentText().split('/')[1])
+                updateRow(rowComboBox, columnComboBox, id)
 
-            print(data)
             for row in range(model.rowCount()):
                 comboBox = QComboBox()
-                comboBox.addItems([v+' '+str(k) for k, v in data.items()])
+                comboBox.addItems([v+' / '+str(k) for k, v in data.items()])
                 nowId = model.index(row, column).data()  # берем из таблицы внешней ключ
 
                 if nowId == '' and data:
-                    updateRow(row, column, int(comboBox.currentText().split()[1]))
+                    updateRow(row, column, int(comboBox.currentText().split('/')[1]))
+                    comboBox.setStyleSheet("""background-color:rgb(255,128,138);""")
                 elif nowId != '':
                     comboBox.setCurrentText(data[nowId]+str(nowId))
-
                 tableData.setIndexWidget(model.index(row, column), comboBox)
+                comboBox.currentIndexChanged.connect(lambda: setFromComboBox())
 
         def updateRow(row, column, id):
             """
@@ -302,7 +308,6 @@ class MainWindow(QMainWindow):
             :param id:
             :return:
             """
-            column = 3
             record = model.record()
             for col in range(model.columnCount() - 1):
                 print(model.index(row, col).data())
@@ -310,15 +315,14 @@ class MainWindow(QMainWindow):
                     record.setValue(col, id)
                 else:
                     record.setValue(col, model.index(row, col).data())
-
             model.updateRowInTable(row, record)
-            # model.submitAll()
 
         def changeTable():
             """вызывается при изменении ячейки"""
             print('ячейка изменена')
             tableData.resizeColumnsToContents()
             tableData.horizontalHeader().setSectionResizeMode(model.columnCount() - 1, 9999999)
+            model.submitAll()
 
         def setTableData():
             """установка данных в таблицу из БД """
