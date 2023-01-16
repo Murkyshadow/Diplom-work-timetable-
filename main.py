@@ -17,63 +17,90 @@ from PyQt5.QtSql import *
 from functools import partial # scrollbar
 from PyQt5.QtCore import Qt
 
+
+# q = QSqlQuery("select * FROM Teacher", con)
+# modelForComboBox.setQuery(q)
+# modelForComboBox.select()
+
+# tableDel.setCellWidget(y, 0, btnDel)    # для TableWidget
+# tableData.setIndexWidget(model.index(y, model.columnCount()-1), btnDel)
+
+# model.index(row, column).data()
+
 class DataBase():
     def __init__(self):
-        con = sqlite3.connect('Timetable.db')
-        cur = con.cursor()
+        self.con = sqlite3.connect('Timetable.db')
+        cur = self.con.cursor()
+
         cur.execute("""CREATE TABLE IF NOT EXISTS Teacher
         (
-          fullName INT NOT NULL,
-          id INT NOT NULL,
-          PRIMARY KEY (id)
+          fullName TEXT,
+          id INTEGER PRIMARY KEY AUTOINCREMENT
         );
         """)
 
         cur.execute("""CREATE TABLE IF NOT EXISTS Lesson
         (
-          title INT NOT NULL,
-          hour INT NOT NULL,
-          id INT NOT NULL,
-          audienceNumber INT NOT NULL,
-          teacherId INT NOT NULL,
-          PRIMARY KEY (id),
-          FOREIGN KEY (teacherId) REFERENCES Teacher(id)
+          title TEXT,
+          hour INT,
+          audienceNumber TEXT,
+          teacherId INT,
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          FOREIGN KEY (teacherId) REFERENCES Teacher(id) ON DELETE SET NULL ON UPDATE CASCADE
         );
         """)
 
         cur.execute("""CREATE TABLE IF NOT EXISTS GroupTimetable
         (
-          dayOfWeek INT NOT NULL,
-          weekNumber INT NOT NULL,
-          lessonNumber INT NOT NULL,
-          lessonId INT NOT NULL,
-          FOREIGN KEY (lessonId) REFERENCES Lesson(id)
+          dayOfWeek INT,
+          weekNumber INT,
+          lessonNumber INT,
+          lessonId INT,
+          FOREIGN KEY (lessonId) REFERENCES Lesson(id) ON DELETE SET NULL ON UPDATE CASCADE
         );""")
 
         cur.execute("""CREATE TABLE IF NOT EXISTS Groups
         (
-          title INT NOT NULL,
-          courseNumber INT NOT NULL,
-          PRIMARY KEY (title)
+          title TEXT,
+          courseNumber INT,
+          PRIMARY KEY (title) 
         );""")
 
         cur.execute("""CREATE TABLE IF NOT EXISTS  TeacherAttendance
         (
-          dayOfWeek INT NOT NULL,
-          lessonNumber INT NOT NULL,
-          weekNumber INT NOT NULL,
-          teacherId INT NOT NULL,
-          FOREIGN KEY (teacherId) REFERENCES Teacher(id)
+          dayOfWeek INT,
+          lessonNumber INT,
+          weekNumber INT,
+          teacherId INT,
+          FOREIGN KEY (teacherId) REFERENCES Teacher(id) ON DELETE SET NULL ON UPDATE CASCADE
         );
         """)
 
         cur.execute("""CREATE TABLE IF NOT EXISTS GroupLesson
         (
-          lessonId INT NOT NULL,
-          groupTitle INT NOT NULL,
-          FOREIGN KEY (lessonId) REFERENCES Lesson(id),
-          FOREIGN KEY (groupTitle) REFERENCES Groups(title)
+          lessonId INT,
+          groupTitle TEXT,
+          FOREIGN KEY (lessonId) REFERENCES Lesson(id) ON DELETE CASCADE ON UPDATE CASCADE,
+          FOREIGN KEY (groupTitle) REFERENCES Groups(title) ON DELETE CASCADE ON UPDATE CASCADE
         );""")
+        cur.execute("""PRAGMA foreign_keys = ON;""")
+        cur.close()
+
+    def getTeacher(self):
+        cur = self.con.cursor()
+        cur.execute("""SELECT fullName, id FROM Teacher""")
+        data = {}
+        for rec in cur.fetchall():
+            data[rec[1]] = rec[0]
+        cur.close()
+        return data
+
+    def delRow(self, id, titleTable):
+        cur = self.con.cursor()
+        cur.execute(f"""DELETE FROM {titleTable} WHERE id = {id}""")
+        self.con.commit()
+        cur.close()
+
 
 class MainWindow(QMainWindow):
     def __init__(self, parent = None):
@@ -82,90 +109,216 @@ class MainWindow(QMainWindow):
         self.ui = PyQt5.uic.loadUi("main.ui")
         self.ui.show()
         setStyle(self.ui)
-        self.tableWithDel(self.ui.tableTeacher, self.ui.btnAddTeacher, ['Учителя', ''], "Teacher")
+        self.tableWithDel(self.ui.tableTeacher, self.ui.btnAddTeacher, ['Учителя', 'id', ''], "Teacher")
         self.tableWithDel(self.ui.tableGroup, self.ui.btnAddGroup, ['Группы', 'Курс', ''], "Groups")
-        self.tableWithDel(self.ui.tableLesson, self.ui.btnAddLesson, ['Занятие', 'Часы', 'Кабинет', 'Учитель', ''], "Lesson")
+        self.tableWithDel(self.ui.tableLesson, self.ui.btnAddLesson, ['0', '1', '2', '3', '4', '5'], "Lesson")
 
     def tableWithDel(self, tableData, btnAdd, headTable, titleTable):
-        def addRowTable():
-            """добавление строки в таблицу при нажатии на кнопку"""
-            model.submitAll()   # ячейка при добавлении новой может еще редактироваться пользователем, поэтому надо сначала принять введенное (при редактировании нельзя добавить)
-            record = model.record()
-            if titleTable == "Teacher":
-                record.remove(record.indexOf("id"))
-                record.setValue("fullName", "")
-            elif titleTable == "Groups":
-                record.setValue("title", "")
-                record.setValue("courseNumber", 1)
-            elif titleTable == "Lesson":
-                record.remove(record.indexOf("id"))
-                record.setValue("title", "")
-                record.setValue("hour", "")
-                record.setValue("audienceNumber", "")
-                record.setValue("teacherId", "")
-            model.insertRecord(-1, record)
-            model.submitAll()
-            model.select()
-            if titleTable == "Groups":
-                setSpinBox()
+        def setWidgets(title=False):
+            """
+            после .select() нужно вставить виджеты и скрыть колонку id
+            :param title: при первом заполнении таблицы так же нужно вставить заголовки
+            :return:
+            """
+            model.insertColumn(model.columnCount())  # для удаления
+            setBtnDel()
             if titleTable == "Teacher" or titleTable == "Lesson":
-                tableData.setColumnHidden(len(headTable)-1, True)  # спрятать id для Teacher
-            model.insertColumn(model.columnCount())
-            setBtnDel()
-            tableData.scrollToBottom()   # пролистываем вниз
-
-        def delRowTable():
-            """удаление строки из таблицы и бд при нажатии на кнопку"""
-            btn = self.sender()
-            row = tableData.indexAt(btn.pos()).row()
-            model.removeRow(row)
-            model.select()
+                tableData.setColumnHidden(model.columnCount() - 2, True)  # спрятать id (предпоследняя колонна) для Teacher or Lesson
             if titleTable == "Groups":
                 setSpinBox()
-            if titleTable == "Teacher":
-                tableData.setColumnHidden(len(headTable)-1, True)  # спрятать id для Teacher
-            model.insertColumn(model.columnCount())    # для удаления
-            # print("нажата кнопка удаления", row, model)
-            # print('кол-во строк и колонн', row, model.columnCount())  # кол-во строк
-            setBtnDel()
+            elif titleTable == "Lesson":
+                setSpinBox(1, 99999)  # добавляем spinbox
+                setComboBox(3, self.DB.getTeacher())
+                setComboBox(3, self.DB.getTeacher())
+            if title:
+                for i, head in enumerate(headTable):
+                    model.setHeaderData(i, Qt.Horizontal, head)
+            changeTable()
+
+        def setBtnAdd():
+            """добавляем кнопку добавления новой строки"""
+            def addRowTable():
+                """добавление строки в таблицу при нажатии на кнопку"""
+                model.submitAll()   # ячейка при добавлении новой может еще редактироваться пользователем, поэтому надо сначала принять введенное (при редактировании нельзя добавить)
+                record = model.record()
+                if titleTable == "Teacher":
+                    record.remove(record.indexOf("id"))
+                    record.setValue("fullName", "")
+                elif titleTable == "Groups":
+                    record.setValue("title", "")
+                    record.setValue("courseNumber", 1)
+                elif titleTable == "Lesson":
+                    record.remove(record.indexOf("id"))
+                    record.setValue("title", "")
+                    record.setValue("hour", 1)
+                    record.setValue("audienceNumber", 1)
+                    record.setValue("teacherId", "")
+                model.insertRecord(-1, record)
+                model.submitAll()
+                model.select()
+                setWidgets()
+                # if titleTable == "Groups":
+                #     setSpinBox()
+                # elif titleTable == "Lesson":
+                #     setSpinBox(1, 99999)  # добавляем spinbox
+                #     setComboBox(3, self.DB.getTeacher())
+                #
+                # model.insertColumn(model.columnCount())  # для удаления
+                # if titleTable == "Teacher" or titleTable == "Lesson":
+                #     tableData.setColumnHidden(model.columnCount() - 2, True)  # спрятать id (предпоследняя колонна) для Teacher or Lesson
+                # setBtnDel()
+                tableData.scrollToBottom()   # пролистываем вниз
+
+            btnAdd.clicked.connect(addRowTable)
+            btnAdd.setStyleSheet("""background-color: rgb(255,255,255); text-align: center;""")
+            btnAdd.setMinimumSize(30, 30)
+            i = QIcon("add.png")
+            btnAdd.setIcon(QtGui.QIcon(i))
 
         def setBtnDel():
             """установка кнопок удаления в таблицу"""
+            def delRowTable():
+                """удаление строки из таблицы и бд при нажатии на кнопку"""
+                btnDel = self.sender()
+                row = tableData.indexAt(btnDel.pos()).row()
+                # model.removeRow(row)
+                self.DB.delRow(model.index(row, model.columnCount()-2).data(),titleTable)
+                model.submitAll()
+                model.select()
+                setWidgets()
+
             row = model.rowCount()  # кол-во строк
-            # tableDel.setColumnCount(1)
-            # tableDel.setRowCount(row)
             for y in range(row):
                 btnDel = QPushButton()
                 btnDel.setMaximumSize(48, 1000)
                 btnDel.setStyleSheet("""background-color: rgb(255,255,255); text-align: center;""")
                 i = QIcon("del.png")
                 btnDel.setIcon(QtGui.QIcon(i))
-                # tableDel.setCellWidget(y, 0, btnDel)    # для TableWidget
                 tableData.setIndexWidget(model.index(y, model.columnCount()-1), btnDel)
-                # tableData.horizontalHeader().setSectionResizeMode(0, 1111)
                 btnDel.clicked.connect(lambda: delRowTable())
-            print('кол-во строк и колонн после добавления btn', model.rowCount(), model.columnCount())  # кол-во строк
 
-        def setSpinBox():
+        def setSpinBox(column=1, max=5):
             @pyqtSlot()
-            def setFromSpinBox():   # вызывается при установке значения в spinBox
-                spinBox = self.sender()
-                row = tableData.indexAt(spinBox.pos()).row()
-                course = spinBox.value()
-                record = model.record()
-                record.setValue(0, model.index(row, 0).data())
-                record.setValue(1, course)
-                model.updateRowInTable(row, record)
+            def setFromSpinBox():   # вызывается при установке значения из spinBox в БД
                 model.submitAll()
+                spinBox = self.sender()
+                rowSpinBox = tableData.indexAt(spinBox.pos()).row()
+                columnSpinBox = tableData.indexAt(spinBox.pos()).column()
+                numForSet = spinBox.value() # вставляем число в бд
+                record = model.record()
+                for col in range(model.columnCount()-1):
+                    record.setValue(col, model.index(rowSpinBox, col).data())
+                    if col == columnSpinBox:
+                        record.setValue(1, numForSet)
+                model.updateRowInTable(rowSpinBox, record)
 
-            print('вставляем spinBox')
             for row in range(model.rowCount()):  # кол-во строк
                 spinBox = QSpinBox()
-                spinBox.setMaximum(5)
+                spinBox.setMaximum(max)
                 spinBox.setMinimum(1)
-                spinBox.setValue(model.index(row, 1).data())
-                tableData.setIndexWidget(model.index(row, 1), spinBox)
+                spinBox.setValue(model.index(row, column).data())   # вставляем в spinbox данные из ячейки
+                tableData.setIndexWidget(model.index(row, column), spinBox)
                 spinBox.editingFinished.connect(setFromSpinBox)
+
+        # def setComboBox(column, data):
+        #     def setFromComboBox(data, comboBox = None, rowComboBox = 123, columnComboBox=123):
+        #         """при изменении значении в combobox вставляет это значение в БД"""
+        #         changeTable()
+        #         model.submitAll()
+        #         record = model.record()
+        #         if comboBox is None:
+        #             comboBox = self.sender()
+        #             comboBox.setStyleSheet("""""")
+        #             rowComboBox = tableData.indexAt(comboBox.pos()).row()
+        #         else:
+        #             comboBox.setStyleSheet("""background-color:rgb(255,128,138);""")
+        #         nowTeacher = comboBox.currentText()
+        #
+        #
+        #         for textForSet in list(data.items()):     # ищем id учителя, чтобы вставить его в бд
+        #             if nowTeacher in textForSet:
+        #                 idNowTeacher = textForSet[0]
+        #                 break
+        #         print('ищем id в', list(data.items()))
+        #         print('изменена в комбобоксе на', nowTeacher, idNowTeacher, 'позиция', comboBox, rowComboBox, columnComboBox)
+        #
+        #         for col in range(model.columnCount() - 1):
+        #             record.setValue(col, model.index(rowComboBox, col).data())
+        #             if col == columnComboBox:
+        #                 record.setValue(col, idNowTeacher)
+        #         # for i in range(model.columnCount()):
+        #         #     print(record.value(i), end=' ')
+        #         # model.submitAll()
+        #         model.updateRowInTable(rowComboBox, record)
+        #         model.submitAll()
+        #
+        #     dataForSet = list(data.values())
+        #     print('вставляем в комбобокс', dataForSet)
+        #     for row in range(model.rowCount()):
+        #         comboBox = QComboBox()
+        #         comboBox.addItems(dataForSet)
+        #         tableData.setIndexWidget(model.index(row, column), comboBox)
+        #         rowFalse = tableData.indexAt(comboBox.pos()).row()
+        #         # print('строка', rowFalse, 'на самом деле -', row)
+        #         print('позиция', comboBox, tableData.indexAt(comboBox.pos()).row(), tableData.indexAt(comboBox.pos()).column())
+        #         idTeacher = model.index(row, column).data()     # берем текущее id учителя из таблицы
+        #         if idTeacher != '':
+        #             nowTeacher = data[idTeacher]        # по id находим имя учителя
+        #             indTeacher = dataForSet.index(nowTeacher)
+        #             comboBox.setCurrentIndex(indTeacher)       # вставляем индекс текущее имя в comboBox
+        #             comboBox.currentIndexChanged.connect(lambda: setFromComboBox(data, columnComboBox=column))
+        #         elif comboBox.currentText() != '':
+        #             print('пусто')
+        #             comboBox.currentIndexChanged.connect(lambda: setFromComboBox(data, columnComboBox=column))
+        #             setFromComboBox(data, comboBox, tableData.indexAt(comboBox.pos()).row(), columnComboBox=column)
+
+        def setComboBox(column, data):
+            """
+            вставка QCombobox в таблицу
+            :param column: колонка куда вставляется QComboBox
+            :param data: данные для вставки {id:data}
+            """
+            def setFromComboBox():
+                '''при изменении комбобокса'''
+                print('комбобокс изменен')
+
+            print(data)
+            for row in range(model.rowCount()):
+                comboBox = QComboBox()
+                comboBox.addItems([v+' '+str(k) for k, v in data.items()])
+                nowId = model.index(row, column).data()  # берем из таблицы внешней ключ
+
+                if nowId == '' and data:
+                    updateRow(row, column, int(comboBox.currentText().split()[1]))
+                elif nowId != '':
+                    comboBox.setCurrentText(data[nowId]+str(nowId))
+
+                tableData.setIndexWidget(model.index(row, column), comboBox)
+
+        def updateRow(row, column, id):
+            """
+            обнавляем строку в таблице (при добавлении значения в бд из виджета)
+            :param row:
+            :param id:
+            :return:
+            """
+            column = 3
+            record = model.record()
+            for col in range(model.columnCount() - 1):
+                print(model.index(row, col).data())
+                if col == column:
+                    record.setValue(col, id)
+                else:
+                    record.setValue(col, model.index(row, col).data())
+
+            model.updateRowInTable(row, record)
+            # model.submitAll()
+
+        def changeTable():
+            """вызывается при изменении ячейки"""
+            print('ячейка изменена')
+            tableData.resizeColumnsToContents()
+            tableData.horizontalHeader().setSectionResizeMode(model.columnCount() - 1, 9999999)
 
         def setTableData():
             """установка данных в таблицу из БД """
@@ -179,38 +332,30 @@ class MainWindow(QMainWindow):
 
             tableData.setModel(model)
             tableData.verticalHeader().hide()   # спрятать цифры сбоку
-            model.insertColumn(model.columnCount())    # для удаления
-            if titleTable == "Teacher" or titleTable == "Lesson":
-                tableData.setColumnHidden(len(headTable)-1, True)  # спрятать id для Teacher or Lesson
-                print(len(headTable)-1)
 
-            for i, head in enumerate(headTable):
-                model.setHeaderData(i, Qt.Horizontal, head)
+            # setWidgets(model)
+            # model.insertColumn(model.columnCount())    # для удаления
+            # if titleTable == "Teacher" or titleTable == "Lesson":
+            #     tableData.setColumnHidden(model.columnCount()-2, True)  # спрятать id (предпоследняя колонна) для Teacher or Lesson
+            # # if titleTable == "Lesson":
+            # #     model.insertColumn(model.columnCount()-1)    # для групп
+
+            # for i, head in enumerate(headTable):
+            #     model.setHeaderData(i, Qt.Horizontal, head)
 
             # tableData.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustToContents)
-            tableData.resizeColumnsToContents()
             # tableData.resizeRowsToContents()
             return model
 
-        def changeTable():
-            print('ячейка изменена')
-            tableData.resizeColumnsToContents()
-
-
-        # для удаления
         model = setTableData()
+        setWidgets(True)
+        # for i, head in enumerate(headTable):
+        #     model.setHeaderData(i, Qt.Horizontal, head)
+        # changeTable()
         model.dataChanged.connect(changeTable)
-        if titleTable == "Groups":
-            setSpinBox()  # добавляем spinbox
-        setBtnDel()
-        # if titleTable == "Lesson":
-        #     print(model.index(0, 4).data(), model.columnCount())
-        btnAdd.clicked.connect(addRowTable)
-        btnAdd.setStyleSheet("""background-color: rgb(255,255,255); text-align: center;""")
-        btnAdd.setMinimumSize(30, 30)
-
-        i = QIcon("add.png")
-        btnAdd.setIcon(QtGui.QIcon(i))
+        setBtnAdd()
+        # if titleTable == 'Lesson':
+        #     self.ui.upd.clicked.connect(updateRow)
 
 def setStyle(ui):
     ui.setStyleSheet("""
@@ -225,7 +370,7 @@ if __name__ == "__main__":
 
     qapp.exec()
 
-class Widget(Qt.QWidget):
+# class Widget(Qt.QWidget):
     # def __init__(self):
     #     super().__init__()
     #     layout = Qt.QHBoxLayout(self)
@@ -277,7 +422,6 @@ class Widget(Qt.QWidget):
         row = table.indexAt(btn.pos()).row()
         column = table.indexAt(btn.pos()).column()
         print(self.buttons[btn])
-
 
 # if __name__ == '__main__':
 #     app = Qt.QApplication([])
