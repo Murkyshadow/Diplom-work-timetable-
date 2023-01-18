@@ -353,13 +353,8 @@ class MainWindow(QMainWindow):
 
         model = setTableData()
         setWidgets(True)
-        # for i, head in enumerate(headTable):
-        #     model.setHeaderData(i, Qt.Horizontal, head)
-        # changeTable()
         model.dataChanged.connect(changeTable)
         setBtnAdd()
-        # if titleTable == 'Lesson':
-        #     self.ui.upd.clicked.connect(updateRow)
 
 def setStyle(ui):
     ui.setStyleSheet("""
