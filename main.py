@@ -109,6 +109,7 @@ class MainWindow(QMainWindow):
         self.ui = PyQt5.uic.loadUi("main.ui")
         self.ui.show()
         setStyle(self.ui)
+        self.clickBtnAdd = False
         self.tableWithDel(self.ui.tableTeacher, self.ui.btnAddTeacher, ['Учителя', 'id', ''], "Teacher")
         self.tableWithDel(self.ui.tableGroup, self.ui.btnAddGroup, ['Группы', 'Курс', ''], "Groups")
         self.tableWithDel(self.ui.tableLesson, self.ui.btnAddLesson, ['0', '1', '2', '3', '4', '5'], "Lesson")
@@ -139,6 +140,7 @@ class MainWindow(QMainWindow):
             """добавляем кнопку добавления новой строки"""
             def addRowTable():
                 """добавление строки в таблицу при нажатии на кнопку"""
+                self.clickBtnAdd = True
                 model.submitAll()   # ячейка при добавлении новой может еще редактироваться пользователем, поэтому надо сначала принять введенное (при редактировании нельзя добавить)
                 record = model.record()
                 if titleTable == "Teacher":
@@ -154,7 +156,7 @@ class MainWindow(QMainWindow):
                     record.setValue("audienceNumber", 1)
                     record.setValue("teacherId", "")
                 model.insertRecord(-1, record)
-                model.submitAll()
+                # model.submitAll()
                 model.select()
                 setWidgets()
                 # if titleTable == "Groups":
@@ -168,6 +170,7 @@ class MainWindow(QMainWindow):
                 #     tableData.setColumnHidden(model.columnCount() - 2, True)  # спрятать id (предпоследняя колонна) для Teacher or Lesson
                 # setBtnDel()
                 tableData.scrollToBottom()   # пролистываем вниз
+                self.clickBtnAdd = False
 
             btnAdd.clicked.connect(addRowTable)
             btnAdd.setStyleSheet("""background-color: rgb(255,255,255); text-align: center;""")
@@ -285,16 +288,16 @@ class MainWindow(QMainWindow):
                 comboBox.setStyleSheet("""""")
                 rowComboBox = tableData.indexAt(comboBox.pos()).row()
                 columnComboBox = tableData.indexAt(comboBox.pos()).column()
-                id = int(comboBox.currentText().split('/')[1])
+                id = int(comboBox.currentText().split('|')[1])
                 updateRow(rowComboBox, columnComboBox, id)
 
             for row in range(model.rowCount()):
                 comboBox = QComboBox()
-                comboBox.addItems([v+' / '+str(k) for k, v in data.items()])
+                comboBox.addItems([v+' | '+str(k) for k, v in data.items()])
                 nowId = model.index(row, column).data()  # берем из таблицы внешней ключ
 
                 if nowId == '' and data:
-                    updateRow(row, column, int(comboBox.currentText().split('/')[1]))
+                    updateRow(row, column, int(comboBox.currentText().split('|')[1]))
                     comboBox.setStyleSheet("""background-color:rgb(255,128,138);""")
                 elif nowId != '':
                     comboBox.setCurrentText(data[nowId]+str(nowId))
@@ -319,10 +322,24 @@ class MainWindow(QMainWindow):
 
         def changeTable():
             """вызывается при изменении ячейки"""
-            print('ячейка изменена')
+            # print('ячейка изменена')
             tableData.resizeColumnsToContents()
             tableData.horizontalHeader().setSectionResizeMode(model.columnCount() - 1, 9999999)
-            model.submitAll()
+            if not self.clickBtnAdd:    # я не знаю почему, но если вызывать submitAll при добавлении строки, то программа вылетает, но submitAll нужно вызывать, чтобы сразу же сохранить изменения в ячейки таблицы, а не после нажатия на enter
+                model.submitAll()
+
+        def changeTab():
+            """
+            обновляется таблица для обновления данных в comboBox
+            вызывается при переходе на вкладку 'Занятия'
+            :return:
+            """
+            print('вкладка изменена на', self.ui.tabWidget.currentIndex())
+            model.select()
+            setWidgets()
+            # if titleTable == "Teacher" and self.ui.tabWidget.currentIndex() == 0:
+            # elif titleTable == "Groups" and self.ui.tabWidget.currentIndex() == :
+            # elif titleTable == "Lesson":
 
         def setTableData():
             """установка данных в таблицу из БД """
@@ -355,6 +372,9 @@ class MainWindow(QMainWindow):
         setWidgets(True)
         model.dataChanged.connect(changeTable)
         setBtnAdd()
+        # QtWidgets.QTabWidget.currentChanged()
+        if titleTable == 'Lesson':
+            self.ui.tabWidget.currentChanged.connect(changeTab)
 
 def setStyle(ui):
     ui.setStyleSheet("""
