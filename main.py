@@ -34,70 +34,161 @@ from PyQt5.QtWidgets import QAbstractItemView
 
 # new check-able combo box
 
+# class CheckableComboBox3(QComboBox):
+#
+#     # constructor
+#     def __init__(self, parent=None):
+#         super(CheckableComboBox, self).__init__(parent)
+#         self.view().pressed.connect(self.handleItemPressed)
+#         self.setModel(QStandardItemModel(self))
+#
+#
+#     count = 0
+#
+#     # action called when item get checked
+#     def do_action(self):
+#         print(self.count, 'action')
+#         # window.label.setText("Checked number : " + str(self.count))
+#
+#     # when any item get pressed
+#     def handleItemPressed(self, index):
+#         print('handle', index)
+#         # getting the item
+#         item = self.model().itemFromIndex(index)
+#
+#         # checking if item is checked
+#         if item.checkState() == Qt.Checked:
+#
+#             # making it unchecked
+#             item.setCheckState(Qt.Unchecked)
+#
+#         # if not checked
+#         else:
+#             # making the item checked
+#             item.setCheckState(Qt.Checked)
+#
+#             self.count += 1
+#
+#             # call the action
+#             self.do_action()
+#
+# class CheckableComboBox2(QtWidgets.QComboBox):
+#     # once there is a checkState set, it is rendered
+#     # here we assume default Unchecked
+#     def addItem(self, text):
+#         super(CheckableComboBox, self).addItem(text)
+#         print(QtCore.Qt.ItemFlag)
+#         item = self.model().item(self.count()-1,0)
+#         item.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsUserCheckable)
+#         item.setCheckState(QtCore.Qt.Unchecked)
+#         self.view().pressed.connect(self.action)
+#
+#     def action(self, index):
+#         item = self.model().itemFromIndex(index)
+#         if item.checkState() == QtCore.Qt.Checked:
+#             item.setCheckState(QtCore.Qt.Unchecked)
+#             print('uncheck ', end='')
+#         else:
+#             print('check ', end='')
+#             item.setCheckState(QtCore.Qt.Checked)
+#         print('нажато', index)
+#
+#     def itemChecked(self, index):
+#         print('12')
+#         item = self.model().item(i,0)
+#         return item.checkState() == QtCore.Qt.Checked
 
-class CheckableComboBox3(QComboBox):
+from PyQt5.QtWidgets import (QApplication, QWidget, QHBoxLayout,
+                             QLineEdit, QListView, QToolButton)
+from PyQt5.QtCore import Qt, QAbstractListModel, pyqtSignal, pyqtSlot, QPoint
+from PyQt5.QtGui import QIcon, QFont
 
-    # constructor
-    def __init__(self, parent=None):
-        super(CheckableComboBox, self).__init__(parent)
-        self.view().pressed.connect(self.handleItemPressed)
-        self.setModel(QStandardItemModel(self))
+style_sheet = '''
+QListView {
+    background-color:white;
+}
+QListView::item:alternate {
+    background:#f7f7f7;
+} 
+QListView::item::hover {
+    background: #0ff;
+}
+'''
 
+class ListModel(QAbstractListModel):
+    def __init__(self):
+        super().__init__()
+        self._data = []
+        self._checklist = []
 
-    count = 0
+    def rowCount(self, index):
+        return len(self._data)
 
-    # action called when item get checked
-    def do_action(self):
-        print(self.count, 'action')
-        # window.label.setText("Checked number : " + str(self.count))
+    def data(self, index, role):
+        row = index.row()
+        if role == Qt.DisplayRole:
+            return self._data[row]
+        elif role == Qt.DecorationRole:
+            if self._checklist[row]:
+                return QIcon('Dark_rc/checkbox_checked.png')
+            else:
+                return QIcon('Dark_rc/checkbox_unchecked.png')
 
-    # when any item get pressed
-    def handleItemPressed(self, index):
-        print('handle', index)
-        # getting the item
-        item = self.model().itemFromIndex(index)
+    def flags(self, index):
+        return Qt.ItemIsEnabled  # | Qt.ItemIsSelectable
 
-        # checking if item is checked
-        if item.checkState() == Qt.Checked:
+    def load(self, lst):
+        self.beginResetModel()
+        self._data = lst
+        self._checklist = [False] * len(lst)
+        self.endResetModel()
 
-            # making it unchecked
-            item.setCheckState(Qt.Unchecked)
+    def get(self):
+        return ','.join(x for x, y in zip(self._data, self._checklist) if y)
 
-        # if not checked
+class View(QListView):
+    state_changed = pyqtSignal(str)
+    def __init__(self):
+        super().__init__()
+        self.setStyleSheet("padding: 0px; margin: 0px;")
+        self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
+        self.setAlternatingRowColors(True)
+        self.setStyleSheet(style_sheet)
+        self.model = ListModel()
+        self.setModel(self.model)
+        self.clicked.connect(self.state_change)  # отслеживается клик по элементу
+
+    def state_change(self, index):
+        self.model._checklist[index.row()] ^= True
+        self.model.layoutChanged.emit()
+        self.state_changed.emit(self.model.get())
+
+class mComboBox(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.line = QLineEdit()
+        self.line.setReadOnly(True)
+        self.btn = QToolButton()
+        self.setStyleSheet("padding: 0px; margin: 0px;")
+        self.btn.setIcon(QIcon('img_rc/array_down.png'))
+        self.view = View()
+        hbox = QHBoxLayout(self)
+        hbox.setContentsMargins(1, 1, 1, 1)
+        hbox.setSpacing(0)
+        hbox.addWidget(self.line)
+        hbox.addWidget(self.btn)
+        self.btn.clicked.connect(self.on_popup)
+        self.view.state_changed.connect(lambda x: self.line.setText(x))
+
+    def on_popup(self):
+        print('123')
+        if self.view.isVisible():
+            self.view.hide()
         else:
-            # making the item checked
-            item.setCheckState(Qt.Checked)
-
-            self.count += 1
-
-            # call the action
-            self.do_action()
-
-class CheckableComboBox2(QtWidgets.QComboBox):
-    # once there is a checkState set, it is rendered
-    # here we assume default Unchecked
-    def addItem(self, text):
-        super(CheckableComboBox, self).addItem(text)
-        print(QtCore.Qt.ItemFlag)
-        item = self.model().item(self.count()-1,0)
-        item.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsUserCheckable)
-        item.setCheckState(QtCore.Qt.Unchecked)
-        self.view().pressed.connect(self.action)
-
-    def action(self, index):
-        item = self.model().itemFromIndex(index)
-        if item.checkState() == QtCore.Qt.Checked:
-            item.setCheckState(QtCore.Qt.Unchecked)
-            print('uncheck ', end='')
-        else:
-            print('check ', end='')
-            item.setCheckState(QtCore.Qt.Checked)
-        print('нажато', index)
-
-    def itemChecked(self, index):
-        print('12')
-        item = self.model().item(i,0)
-        return item.checkState() == QtCore.Qt.Checked
+            self.view.resize(self.width(), 120)
+            self.view.move(self.mapToGlobal(QPoint(0, self.height())))
+            self.view.setFont(self.font())
+            self.view.show()
 
 class MyCheckableComboBox(QtWidgets.QComboBox):
     def __init__(self):
@@ -107,10 +198,10 @@ class MyCheckableComboBox(QtWidgets.QComboBox):
         # self.closeOnLineEditClick = False
         print(self.model())
         self.model().dataChanged.connect(self.updateCheck)
-        self.addItems('abcde')
-        self.lineEdit().setText('Выберите что-то')
+        # self.addItems('abcde')
         self.view().pressed.connect(self.action)
         self.setStyleSheet(self.getStyle())
+        self.lineEdit().setText('Выберите что-то')
 
     def getStyle(self):
         return """
@@ -238,6 +329,13 @@ class DataBase():
         names = row.keys()
         return names.index(titlePKColumn)
 
+    def getTitleGroup(self):
+        cur = self.con.cursor()
+        cur.execute("""SELECT title FROM Groups""")
+        data = [d[0] for d in cur.fetchall()]
+        cur.close()
+        return data
+
     def delRow(self, id, titleTable, titlePKColumn):
         cur = self.con.cursor()
         cur.execute(f"""DELETE FROM {titleTable} WHERE {titlePKColumn} = '{id}'""")
@@ -271,27 +369,26 @@ class table(QtWidgets.QWidget):
         # self.tableData.horizontalHeader().setStretchLastSection(True)
         # self.tableData.resizeColumnToContents(0)
 
-
 class MainWindow(QMainWindow):
     def __init__(self, parent = None):
         super().__init__(parent)
-        self.setFont(QFont("Comic Sans", 16))
         self.DB = DataBase()
         self.ui = PyQt5.uic.loadUi("main.ui")
         setStyle(self.ui)
         self.ui.show()
+        # self.setFont(QFont("Comics Sans MS", 10))
         # self.clickBtnAdd = False
 
         teacher = tableWithDel(['Учителя', 'id', ''], "Teacher", 'id', self.DB)
         self.ui.horizontalLayout.addWidget(teacher)
         group = tableWithDel(['Группы', 'Курс', ''], "Groups", 'title', self.DB)
         self.ui.horizontalLayout_2.addWidget(group)
-        lesson = tableWithDel(['Занятие', 'Часы', 'Кабинет', 'Учитель', 'id', ''], "Lesson", 'id', self.DB, self.ui.tabWidget)
+        lesson = tableWithDel(['Занятие', 'Часы', 'Кабинет', 'Учитель', 'id', 'Группа', ''], "Lesson", 'id', self.DB, self.ui.tabWidget)
         self.ui.horizontalLayout_3.addWidget(lesson)
 
 
 class tableWithDel(QtWidgets.QWidget):
-    def __init__(self, headTable, titleTable, titlePKColumn, DB, tabWidget=False, *args, **kwargs):
+    def __init__(self, headTable, titleTable, titlePKColumn, DB, tabWidget=False,  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.layout = QtWidgets.QGridLayout()
         self.titlePKColumn = titlePKColumn  # для удаления столбца
@@ -328,6 +425,8 @@ class tableWithDel(QtWidgets.QWidget):
         self.tableData.horizontalHeader().setStretchLastSection(True)
         self.tableData.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.tableData.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        # self.tableData.horizontalHeader().setSectionResizeMode(self.model.columnCount()-2, 1)
+        # self.tableData.horizontalHeader().setSectionResizeMode(self.model.columnCount()-1, 1)
 
     def setWidgets(self, title=False):
         """
@@ -335,9 +434,7 @@ class tableWithDel(QtWidgets.QWidget):
         :param title: при первом заполнении таблицы так же нужно вставить заголовки
         :return:
         """
-        self.model.insertColumn(self.model.columnCount())  # для удаления
-
-        self.setBtnDel()
+        self.model.insertColumn(self.model.columnCount())  # для кнопок удаления
         if self.titleTable == "Teacher" or self.titleTable == "Lesson":
             self.tableData.setColumnHidden(self.model.columnCount() - 2, True)  # спрятать id (предпоследняя колонна) для Teacher or Lesson
         if self.titleTable == "Groups":
@@ -345,10 +442,38 @@ class tableWithDel(QtWidgets.QWidget):
         elif self.titleTable == "Lesson":
             self.setSpinBox(1, 99999)  # добавляем spinbox
             self.setComboBox(3, self.DB.getTeacher())
+            self.setCheckableComboBox(self.DB.getTitleGroup())
+        self.setBtnDel()
         if title:
             for i, head in enumerate(self.headTable):
                 self.model.setHeaderData(i, Qt.Horizontal, head)
         self.changeTable()
+        self.setStyleSheet("""
+        QPushButton { text-align: center;}
+        QLabel {background-color: rgb(255,128,0);}
+        QWidget {font-size:16px; font-family:Comic Sans MS;}
+        """)
+
+    def setFromCheckableComboBox(self):
+        print('новое значение')
+        pass
+
+    def setCheckableComboBox(self, data):
+        self.model.insertColumn(self.model.columnCount())
+        column = self.model.columnCount()-2
+        for row in range(self.model.rowCount()):
+            сheckableСomboBox = mComboBox()
+            сheckableСomboBox.view.model.load(data)
+            # сheckableСomboBox.addItems(data)
+            # сheckableСomboBox.lineEdit().setText('Выберите что-то')
+            # nowId = self.model.index(row, column).data()  # берем из таблицы внешней ключ
+            # if nowId == '' and data:
+            #     self.updateRow(row, column, int(сheckableСomboBox.currentText().split('|')[1]))
+            #     # comboBox.setStyleSheet("""background-color:rgb(255,128,138);""")
+            # elif nowId != '':
+            #     сheckableСomboBox.setCurrentText(data[nowId]+' | '+str(nowId))
+            self.tableData.setIndexWidget(self.model.index(row, column), сheckableСomboBox)
+            # сheckableСomboBox.currentIndexChanged.connect(self.setFromComboBox)
 
     def addRowTable(self):
         """добавление строки в таблицу при нажатии на кнопку"""
@@ -411,8 +536,9 @@ class tableWithDel(QtWidgets.QWidget):
         row = self.model.rowCount()  # кол-во строк
         for y in range(row):
             btnDel = QPushButton()
-            btnDel.setMinimumSize(30,30)
-            btnDel.setMaximumSize(30, 30)   # x, y
+            size = 37
+            btnDel.setMinimumSize(size, size)
+            btnDel.setMaximumSize(size, size)   # x, y
             # btnDel.setStyleSheet("""text-align: center;""")
             i = QIcon("del.png")
             btnDel.setIcon(QtGui.QIcon(i))
@@ -421,12 +547,12 @@ class tableWithDel(QtWidgets.QWidget):
 
     def setSpinBox(self, column=1, max=5):
         @pyqtSlot()
-        def setFromSpinBox(tableData):   # вызывается при установке значения из spinBox в БД
+        def setFromSpinBox(tableData):      # вызывается при установке значения из spinBox в БД
             self.model.submitAll()
             spinBox = self.sender()
             rowSpinBox = tableData.indexAt(spinBox.pos()).row()
             columnSpinBox = tableData.indexAt(spinBox.pos()).column()
-            numForSet = spinBox.value() # вставляем число в бд
+            numForSet = spinBox.value()     # вставляем число в бд
             record = self.model.record()
             for col in range(self.model.columnCount()-1):
                 record.setValue(col, self.model.index(rowSpinBox, col).data())
@@ -441,58 +567,6 @@ class tableWithDel(QtWidgets.QWidget):
             spinBox.setValue(self.model.index(row, column).data())   # вставляем в spinbox данные из ячейки
             self.tableData.setIndexWidget(self.model.index(row, column), spinBox)
             spinBox.editingFinished.connect(lambda: setFromSpinBox(self.tableData))
-
-    # def setComboBox32(column, data):
-    #     def setFromComboBox32(data, comboBox = None, rowComboBox = 123, columnComboBox=123):
-    #         """при изменении значении в combobox вставляет это значение в БД"""
-    #         self.changeTable()
-    #         self.model.submitAll()
-    #         record = self.model.record()
-    #         if comboBox is None:
-    #             comboBox = self.sender()
-    #             # comboBox.setStyleSheet("""""")
-    #             rowComboBox = self.tableData.indexAt(comboBox.pos()).row()
-    #         # else:
-    #         #     comboBox.setStyleSheet("""background-color:rgb(255,128,138);""")
-    #         nowTeacher = comboBox.currentText()
-    #
-    #
-    #         for textForSet in list(data.items()):     # ищем id учителя, чтобы вставить его в бд
-    #             if nowTeacher in textForSet:
-    #                 idNowTeacher = textForSet[0]
-    #                 break
-    #         print('ищем id в', list(data.items()))
-    #         print('изменена в комбобоксе на', nowTeacher, idNowTeacher, 'позиция', comboBox, rowComboBox, columnComboBox)
-    #
-    #         for col in range(self.model.columnCount() - 1):
-    #             record.setValue(col, self.model.index(rowComboBox, col).data())
-    #             if col == columnComboBox:
-    #                 record.setValue(col, idNowTeacher)
-    #         # for i in range(self.model.columnCount()):
-    #         #     print(record.value(i), end=' ')
-    #         # self.model.submitAll()
-    #         self.model.updateRowInTable(rowComboBox, record)
-    #         self.model.submitAll()
-    #
-    #     dataForSet = list(data.values())
-    #     print('вставляем в комбобокс', dataForSet)
-    #     for row in range(self.model.rowCount()):
-    #         comboBox = QComboBox()
-    #         comboBox.addItems(dataForSet)
-    #         self.tableData.setIndexWidget(self.model.index(row, column), comboBox)
-    #         rowFalse = self.tableData.indexAt(comboBox.pos()).row()
-    #         # print('строка', rowFalse, 'на самом деле -', row)
-    #         print('позиция', comboBox, self.tableData.indexAt(comboBox.pos()).row(), self.tableData.indexAt(comboBox.pos()).column())
-    #         idTeacher = self.model.index(row, column).data()     # берем текущее id учителя из таблицы
-    #         if idTeacher != '':
-    #             nowTeacher = data[idTeacher]        # по id находим имя учителя
-    #             indTeacher = dataForSet.index(nowTeacher)
-    #             comboBox.setCurrentIndex(indTeacher)       # вставляем индекс текущее имя в comboBox
-    #             comboBox.currentIndexChanged.connect(lambda: setFromComboBox(data, columnComboBox=column))
-    #         elif comboBox.currentText() != '':
-    #             print('пусто')
-    #             comboBox.currentIndexChanged.connect(lambda: setFromComboBox(data, columnComboBox=column))
-    #             setFromComboBox(data, comboBox, self.tableData.indexAt(comboBox.pos()).row(), columnComboBox=column)
 
     def setFromComboBox(self):
         '''при изменении значении в combobox вставляем это значение в БД'''
@@ -514,12 +588,11 @@ class tableWithDel(QtWidgets.QWidget):
             comboBox = QComboBox()
             comboBox.addItems([v+' | '+str(k) for k, v in data.items()])
             nowId = self.model.index(row, column).data()  # берем из таблицы внешней ключ
-
             if nowId == '' and data:
                 self.updateRow(row, column, int(comboBox.currentText().split('|')[1]))
                 # comboBox.setStyleSheet("""background-color:rgb(255,128,138);""")
             elif nowId != '':
-                comboBox.setCurrentText(data[nowId]+str(nowId))
+                comboBox.setCurrentText(data[nowId]+' | '+str(nowId))
             self.tableData.setIndexWidget(self.model.index(row, column), comboBox)
             comboBox.currentIndexChanged.connect(self.setFromComboBox)
 
@@ -546,18 +619,14 @@ class tableWithDel(QtWidgets.QWidget):
 
     def changeTable(self):
         """вызывается при изменении ячейки"""
-        # print('ячейка изменена')
-        # self.tableData.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustToContents)
-        # self.tableData.horizontalHeader().setSectionResizeMode(0, 0)
-        # self.tableData.horizontalHeader().setStretchLastSection(True)
-        # self.tableData.resizeRowsToContents()
-        # self.tableData.resizeColumnsToContents()
+        print('ячейка изменена')
+        # # self.tableData.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustToContents)
+        # self.tableData.horizontalHeader().setSectionResizeMode(self.model.columnCount()-2, 0)
+        # # self.tableData.horizontalHeader().setStretchLastSection(True)
+        # self.tableData.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        # self.tableData.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         # if not self.clickBtnAdd:    # я не знаю почему, но если вызывать submitAll при добавлении строки, то программа вылетает, но submitAll нужно вызывать, чтобы сразу же сохранить изменения в ячейки таблицы, а не после нажатия на enter
         #     self.model.submitAll()
-        self.tableData.horizontalHeader().setStretchLastSection(True)
-        self.tableData.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        self.tableData.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        pass
 
     def changeTab(self):
         """
@@ -566,7 +635,6 @@ class tableWithDel(QtWidgets.QWidget):
         :return:
         """
         print('вкладка изменена на', self.tabWidget.currentIndex())
-
         # if self.titleTable == "Teacher" and self.ui.tabWidget.currentIndex() == 0:
         # elif self.titleTable == "Groups" and self.ui.tabWidget.currentIndex() == :
         if self.titleTable == "Lesson" and self.tabWidget.currentIndex() == 2:
@@ -602,6 +670,7 @@ def setStyle(ui):
     ui.setStyleSheet("""
     QPushButton { text-align: center;}
     QLabel {background-color: rgb(255,128,0);}
+    QWidget {font-size:16px; font-family:Comic Sans MS;}
     """)
 
 if __name__ == '__main__':

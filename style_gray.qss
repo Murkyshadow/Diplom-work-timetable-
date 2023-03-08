@@ -115,7 +115,6 @@ QRadioButton::indicator::checked {
 
 QComboBox, QDateEdit{
 	border-radius: 3px;
-	padding: 1px 10px 1px 5px;
 	border: 1px solid #B8B8B8;
 }
 
@@ -314,7 +313,7 @@ QTableView::item:hover, QListView::item:hover, QTreeView::item:hover {
 }
 
 QTableView::item, QListView::item, QTreeView::item {
-	padding: 3px;
+	padding: 0px;
 	margin: 0px;
 }
 
