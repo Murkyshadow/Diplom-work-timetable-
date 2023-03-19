@@ -1,4 +1,5 @@
 import sys
+import time
 import typing
 
 import PyQt5
@@ -106,14 +107,23 @@ from PyQt5.QtGui import QIcon, QFont
 style_sheet = '''
 QListView {
     background-color:white;
+    font-size:16px;
+    font-family:Comic Sans MS;
 }
 QListView::item:alternate {
     background:#f7f7f7;
-} 
+}
 QListView::item::hover {
     background: #0ff;
 }
 '''
+
+class Timer():
+    def __init__(self):  # таймер
+        self.st = time.time()
+
+    def end(self):
+        return float("%.2f" % (time.time() - self.st))
 
 class ListModel(QAbstractListModel):
     def __init__(self):
@@ -129,41 +139,60 @@ class ListModel(QAbstractListModel):
         if role == Qt.DisplayRole:
             return self._data[row]
         elif role == Qt.DecorationRole:
-            if self._checklist[row]:
-                return QIcon('Dark_rc/checkbox_checked.png')
-            else:
-                return QIcon('Dark_rc/checkbox_unchecked.png')
+            return QIcon('Dark_rc/checkbox_checked.png') if self._checklist[row] else QIcon('Dark_rc/checkbox_unchecked.png')
 
     def flags(self, index):
         return Qt.ItemIsEnabled  # | Qt.ItemIsSelectable
 
-    def load(self, lst):
+    def load(self, data_check):
         self.beginResetModel()
-        self._data = lst
-        self._checklist = [False] * len(lst)
-        self.endResetModel()
+        self._data = list(data_check.keys())
+        # print(list(data_check.keys()))
+        self._checklist = list(data_check.values())
+        self.endResetModel()    # ?
 
     def get(self):
-        return ','.join(x for x, y in zip(self._data, self._checklist) if y)
+        return ', '.join(x for x, y in zip(self._data, self._checklist) if y)
 
 class View(QListView):
-    state_changed = pyqtSignal(str)
     def __init__(self):
         super().__init__()
         self.setStyleSheet("padding: 0px; margin: 0px;")
-        self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
+        # self.window = QDialog()
         self.setAlternatingRowColors(True)
         self.setStyleSheet(style_sheet)
         self.model = ListModel()
         self.setModel(self.model)
-        self.clicked.connect(self.state_change)  # отслеживается клик по элементу
+
+class PopupWidget(QWidget):
+    state_changed = pyqtSignal(str)
+    change_element = pyqtSignal(str, bool, QWidget)
+    def __init__(self, widget):
+        super().__init__()
+        self.widget = widget
+        self.setWindowFlags(Qt.Popup)
+        self.initView()
+        self.view.clicked.connect(self.state_change)  # отслеживается клик по элементу
+        self.time_for_open = Timer()
 
     def state_change(self, index):
-        self.model._checklist[index.row()] ^= True
-        self.model.layoutChanged.emit()
-        self.state_changed.emit(self.model.get())
+        self.view.model._checklist[index.row()] ^= True  #  a^b   0^0=0   0^1=1     1^0=1   1^1=0
+        self.view.model.layoutChanged.emit()
+        self.state_changed.emit(self.view.model.get())
+        self.change_element.emit(self.view.model._data[index.row()], self.view.model._checklist[index.row()], self.widget)
 
-class mComboBox(QWidget):
+    def initView(self):
+        self.view = View()
+        self.view.setAlternatingRowColors(True)
+        hbox = QHBoxLayout(self)
+        hbox.setContentsMargins(1, 1, 1, 1)
+        hbox.setSpacing(0)
+        hbox.addWidget(self.view)
+
+    def closeEvent(self, event):
+        self.time_for_open = Timer()
+
+class MyCheckableComboBox(QWidget):
     def __init__(self):
         super().__init__()
         self.line = QLineEdit()
@@ -171,88 +200,28 @@ class mComboBox(QWidget):
         self.btn = QToolButton()
         self.setStyleSheet("padding: 0px; margin: 0px;")
         self.btn.setIcon(QIcon('img_rc/array_down.png'))
-        self.view = View()
+        self.popup_widget = PopupWidget(self)
+        self.changeElement = self.popup_widget.change_element
+
         hbox = QHBoxLayout(self)
         hbox.setContentsMargins(1, 1, 1, 1)
         hbox.setSpacing(0)
         hbox.addWidget(self.line)
         hbox.addWidget(self.btn)
-        self.btn.clicked.connect(self.on_popup)
-        self.view.state_changed.connect(lambda x: self.line.setText(x))
+        self.btn.clicked.connect(self.show_popup)
+        self.popup_widget.state_changed.connect(lambda x: self.line.setText(x))
 
-    def on_popup(self):
-        print('123')
-        if self.view.isVisible():
-            self.view.hide()
-        else:
-            self.view.resize(self.width(), 120)
-            self.view.move(self.mapToGlobal(QPoint(0, self.height())))
-            self.view.setFont(self.font())
-            self.view.show()
+    def addElements(self, elements):    # {data : is_check}
+        self.popup_widget.view.model.load(elements)
+        self.line.setText(self.popup_widget.view.model.get())
 
-class MyCheckableComboBox(QtWidgets.QComboBox):
-    def __init__(self):
-        super().__init__()
-        self.setEditable(True)
-        self.lineEdit().setReadOnly(True)
-        # self.closeOnLineEditClick = False
-        print(self.model())
-        self.model().dataChanged.connect(self.updateCheck)
-        # self.addItems('abcde')
-        self.view().pressed.connect(self.action)
-        self.setStyleSheet(self.getStyle())
-        self.lineEdit().setText('Выберите что-то')
-
-    def getStyle(self):
-        return """
-                :indicator:unchecked
-                {
-                    image: url(Dark_rc/checkbox_unchecked.png);
-                }
-                :indicator:checked
-                {
-                    image: url(Dark_rc/checkbox_checked.png);
-                }
-               """
-
-    def action(self, index):    # при нажатии на текст
-        item = self.model().itemFromIndex(index)
-        if item.checkState() == QtCore.Qt.Checked:
-            item.setCheckState(QtCore.Qt.Unchecked)
-        else:
-            item.setCheckState(QtCore.Qt.Checked)
-
-    def addItem(self, text, userData=None):
-        item = QStandardItem()
-        item.setText(text)
-        if userData is None:
-            item.setData(userData)
-        item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
-        item.setData(Qt.Unchecked, Qt.CheckStateRole)
-        self.model().appendRow(item)
-
-    def addItems(self, items: typing.Iterable[str]) -> None:  # зачем None?
-        for item in items:
-            self.addItem(item)
-
-    def itemChecked(self, index):
-        item = self.model().item(index, 0)
-        print(index, item.checkState())
-        return item.checkState() == QtCore.Qt.Checked
-
-    def updateCheck(self, index):
-        # PyQt5.QtCore.QModelIndex.row()
-        row = index.row()
-        if self.model().item(row).checkState() == Qt.Checked:
-            print('выбрано', self.model().item(row).text())
-        elif self.model().item(row).checkState() == Qt.Unchecked:
-            print('не выбрано', self.model().item(row).text())
-
-        textChecked = []
-        for i in range(self.model().rowCount()):
-            if self.model().item(i).checkState() == Qt.Checked:
-                textChecked.append(self.model().item(i).text())
-        self.lineEdit().setText(', '.join(textChecked))
+    def show_popup(self):
+        if not self.popup_widget.isVisible() and self.popup_widget.time_for_open.end() >= 0.4:    # если сейчас окно закрыто и с момента закрытия прошло 0.4 секунды
+            self.popup_widget.setGeometry(100, 200, 100, 100)
+            self.popup_widget.resize(self.width(), 90)
+            self.popup_widget.move(self.mapToGlobal(QPoint(0, self.height())))
+            self.setFont(self.font())
+            self.popup_widget.show()
 
 class DataBase():
     def __init__(self):
@@ -294,13 +263,12 @@ class DataBase():
           PRIMARY KEY (title)
         );""")
 
-        cur.execute("""CREATE TABLE IF NOT EXISTS  TeacherAttendance
+        cur.execute("""CREATE TABLE IF NOT EXISTS TeacherAttendance
         (
-          dayOfWeek INT,
           lessonNumber INT,
           weekNumber INT,
           teacherId INT,
-          FOREIGN KEY (teacherId) REFERENCES Teacher(id) ON DELETE SET NULL ON UPDATE CASCADE
+          FOREIGN KEY (teacherId) REFERENCES Teacher(id) ON DELETE CASCADE ON UPDATE CASCADE
         );
         """)
 
@@ -342,6 +310,25 @@ class DataBase():
         self.con.commit()
         cur.close()
 
+    def addGroupLesson(self, id_lesson, title_group):
+        cur = self.con.cursor()
+        cur.execute(f"""INSERT INTO GroupLesson VALUES (?, ?)""", (id_lesson, title_group))
+        self.con.commit()
+        cur.close()
+
+    def delGroupLesson(self, id_lesson, title_group):
+        cur = self.con.cursor()
+        cur.execute(f"""DELETE FROM GroupLesson WHERE lessonId = '{id_lesson}' AND groupTitle = '{title_group}'""")
+        self.con.commit()
+        cur.close()
+
+    def getGroupLesson(self, idLesson):
+        cur = self.con.cursor()
+        cur.execute(f"""SELECT groupTitle FROM GroupLesson WHERE lessonId = '{idLesson}' """)
+        data = [d[0] for d in cur.fetchall()]
+        cur.close()
+        return data
+
 class table(QtWidgets.QWidget):
     def __init__(self,  *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -379,22 +366,19 @@ class MainWindow(QMainWindow):
         # self.setFont(QFont("Comics Sans MS", 10))
         # self.clickBtnAdd = False
 
-        teacher = tableWithDel(['Учителя', 'id', ''], "Teacher", 'id', self.DB)
+        teacher = tableWithEditing(['Учителя', 'id', '', ''], "Teacher", 'id', self.DB, extra_button = True)
         self.ui.horizontalLayout.addWidget(teacher)
-        group = tableWithDel(['Группы', 'Курс', ''], "Groups", 'title', self.DB)
+        group = tableWithEditing(['Группы', 'Курс', ''], "Groups", 'title', self.DB)
         self.ui.horizontalLayout_2.addWidget(group)
-        lesson = tableWithDel(['Занятие', 'Часы', 'Кабинет', 'Учитель', 'id', 'Группа', ''], "Lesson", 'id', self.DB, self.ui.tabWidget)
+        lesson = tableWithEditing(['Занятие', 'Часы', 'Кабинет', 'Учитель', 'id', 'Группа', ''], "Lesson", 'id', self.DB, self.ui.tabWidget)
         self.ui.horizontalLayout_3.addWidget(lesson)
 
-
-class tableWithDel(QtWidgets.QWidget):
-    def __init__(self, headTable, titleTable, titlePKColumn, DB, tabWidget=False,  *args, **kwargs):
+class tableWithEditing(QtWidgets.QWidget):
+    def __init__(self, headTable, titleTable, titlePKColumn, DB, tabWidget=False, extra_button=False,  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.layout = QtWidgets.QGridLayout()
         self.titlePKColumn = titlePKColumn  # для удаления столбца
-
         self.setLayout(self.layout)
-
         self.titleTable = titleTable
         self.tableData = QtWidgets.QTableView()
         self.layout.addWidget(self.tableData)
@@ -413,6 +397,7 @@ class tableWithDel(QtWidgets.QWidget):
         self.headTable = headTable
         self.DB = DB
         self.clickBtnAdd = False
+        self.extra_button = extra_button
 
         self.setBtnAdd()
         self.setWidgets(title=True)
@@ -443,6 +428,11 @@ class tableWithDel(QtWidgets.QWidget):
             self.setSpinBox(1, 99999)  # добавляем spinbox
             self.setComboBox(3, self.DB.getTeacher())
             self.setCheckableComboBox(self.DB.getTitleGroup())
+
+        if self.extra_button:
+            self.setExtraButton()                               # используем столбец для кнопки удаления
+            self.model.insertColumn(self.model.columnCount())  # и добавляем новый столбец для кнопки удаления
+
         self.setBtnDel()
         if title:
             for i, head in enumerate(self.headTable):
@@ -454,30 +444,77 @@ class tableWithDel(QtWidgets.QWidget):
         QWidget {font-size:16px; font-family:Comic Sans MS;}
         """)
 
-    def setFromCheckableComboBox(self):
-        print('новое значение')
-        pass
+    def setExtraButton(self):
+        row = self.model.rowCount()  # кол-во строк
+        self.extraBtn_row = {}
+        for y in range(row):
+            extra_btn = QPushButton()
+            size = 37
+            extra_btn.setMinimumSize(size, size)
+            extra_btn.setMaximumSize(size, size)  # x, y
+            icon = QIcon("teach_negative.png")
+            extra_btn.setIconSize(QtCore.QSize(size-7, size-7))
+            extra_btn.setIcon(icon)
+            cell_widget = QWidget()
+            lay_out = QHBoxLayout(cell_widget)
+            lay_out.addWidget(extra_btn)
+            lay_out.setAlignment(QtCore.Qt.AlignCenter)
+            lay_out.setContentsMargins(0, 0, 0, 0)  # Рисуем границы
+            cell_widget.setLayout(lay_out)
+            self.extraBtn_row[extra_btn] = y
+            self.tableData.setIndexWidget(self.model.index(y, self.model.columnCount() - 1), cell_widget)
+            extra_btn.clicked.connect(lambda: self.openWorkingTime())
+
+    def openWorkingTime(self):
+        btn = self.sender()
+        row = self.extraBtn_row[btn]
+        # print(row, id_Teacher := self.model.index(row, 0).data(), id_Teacher := self.model.index(row, 1).data())
+        # id_Teacher = self.model.index(0, row).data()
+        # id_Teacher = self.model.index(1, row).data()
+        id_Teacher = self.model.index(row, 1).data()
+        win = WorkingTime(id_teacher = id_Teacher, name = self.model.index(row, 0).data())
+        setStyle(win)
+        win.show()
+        win.exec()
+
+    def setFromCheckableComboBox(self, el, is_check, comboBox):
+        row = self.сheckableСomboBox_row[comboBox]
+        id_lesson = self.model.index(row, 4).data()
+        if is_check:
+            self.DB.addGroupLesson(id_lesson, el)
+        else:
+            self.DB.delGroupLesson(id_lesson, el)
 
     def setCheckableComboBox(self, data):
         self.model.insertColumn(self.model.columnCount())
         column = self.model.columnCount()-2
+        self.сheckableСomboBox_row = {}
         for row in range(self.model.rowCount()):
-            сheckableСomboBox = mComboBox()
-            сheckableСomboBox.view.model.load(data)
+            data_check = {d:False for d in data}
+            d_cheked = self.DB.getGroupLesson(self.model.index(row, 4).data())
+            for d in d_cheked:
+                data_check[d] = True
+            сheckableСomboBox = MyCheckableComboBox()
+            сheckableСomboBox.changeElement.connect(lambda el, is_check, comboBox: self.setFromCheckableComboBox(el, is_check, comboBox))
+            сheckableСomboBox.addElements(data_check)
             # сheckableСomboBox.addItems(data)
             # сheckableСomboBox.lineEdit().setText('Выберите что-то')
             # nowId = self.model.index(row, column).data()  # берем из таблицы внешней ключ
             # if nowId == '' and data:
-            #     self.updateRow(row, column, int(сheckableСomboBox.currentText().split('|')[1]))
-            #     # comboBox.setStyleSheet("""background-color:rgb(255,128,138);""")
+                # self.updateRow(row, column, int(сheckableСomboBox.currentText().split('|')[1]))
+                # comboBox.setStyleSheet("""background-color:rgb(255,128,138);""")
             # elif nowId != '':
             #     сheckableСomboBox.setCurrentText(data[nowId]+' | '+str(nowId))
             self.tableData.setIndexWidget(self.model.index(row, column), сheckableСomboBox)
+            self.сheckableСomboBox_row[сheckableСomboBox] = row
             # сheckableСomboBox.currentIndexChanged.connect(self.setFromComboBox)
+            # сheckableСomboBox.popup_widget.view.model._checklist[0] = True
+        # print(self.сheckableСomboBox_row)
+        # print(self.checkableComboBox_row)     # в чем отличие от прошлой строчки??????
 
     def addRowTable(self):
         """добавление строки в таблицу при нажатии на кнопку"""
-        print('123')
+        # print('123')
         self.clickBtnAdd = True
         self.model.submitAll()   # ячейка при добавлении новой может еще редактироваться пользователем, поэтому надо сначала принять введенное (при редактировании нельзя добавить)
         record = self.model.record()
@@ -517,8 +554,8 @@ class tableWithDel(QtWidgets.QWidget):
         btnAdd.clicked.connect(self.addRowTable)
         btnAdd.setStyleSheet("""background-color: rgb(255,255,255); text-align: center;""")
         btnAdd.setMinimumSize(30, 30)
-        i = QIcon("add.png")
-        btnAdd.setIcon(QtGui.QIcon(i))
+        icon = QIcon("add.png")
+        btnAdd.setIcon(icon)
 
     def delRowTable(self):
         """удаление строки из таблицы и бд при нажатии на кнопку"""
@@ -539,9 +576,9 @@ class tableWithDel(QtWidgets.QWidget):
             size = 37
             btnDel.setMinimumSize(size, size)
             btnDel.setMaximumSize(size, size)   # x, y
-            # btnDel.setStyleSheet("""text-align: center;""")
-            i = QIcon("del.png")
-            btnDel.setIcon(QtGui.QIcon(i))
+            icon = QIcon("del.png")
+            btnDel.setIcon(icon)
+            # btnDel.setStyleSheet("""padding: 0px 230px 0px;""")
             self.tableData.setIndexWidget(self.model.index(y, self.model.columnCount()-1), btnDel)
             btnDel.clicked.connect(lambda: self.delRowTable())
 
@@ -570,9 +607,9 @@ class tableWithDel(QtWidgets.QWidget):
 
     def setFromComboBox(self):
         '''при изменении значении в combobox вставляем это значение в БД'''
-        print('комбобокс изменен')
+        # print('комбобокс изменен')
         comboBox = self.sender()
-        # comboBox.setStyleSheet("""""")
+        comboBox.setStyleSheet("""""")
         rowComboBox = self.tableData.indexAt(comboBox.pos()).row()
         columnComboBox = self.tableData.indexAt(comboBox.pos()).column()
         id = int(comboBox.currentText().split('|')[1])
@@ -590,7 +627,7 @@ class tableWithDel(QtWidgets.QWidget):
             nowId = self.model.index(row, column).data()  # берем из таблицы внешней ключ
             if nowId == '' and data:
                 self.updateRow(row, column, int(comboBox.currentText().split('|')[1]))
-                # comboBox.setStyleSheet("""background-color:rgb(255,128,138);""")
+                comboBox.setStyleSheet("""background-color:rgb(255,128,138);""")
             elif nowId != '':
                 comboBox.setCurrentText(data[nowId]+' | '+str(nowId))
             self.tableData.setIndexWidget(self.model.index(row, column), comboBox)
@@ -619,14 +656,14 @@ class tableWithDel(QtWidgets.QWidget):
 
     def changeTable(self):
         """вызывается при изменении ячейки"""
-        print('ячейка изменена')
-        # # self.tableData.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustToContents)
+        # print('ячейка изменена')
+        # self.tableData.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustToContents)
         # self.tableData.horizontalHeader().setSectionResizeMode(self.model.columnCount()-2, 0)
         # # self.tableData.horizontalHeader().setStretchLastSection(True)
         # self.tableData.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         # self.tableData.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        # if not self.clickBtnAdd:    # я не знаю почему, но если вызывать submitAll при добавлении строки, то программа вылетает, но submitAll нужно вызывать, чтобы сразу же сохранить изменения в ячейки таблицы, а не после нажатия на enter
-        #     self.model.submitAll()
+        if not self.clickBtnAdd:    # я не знаю почему, но если вызывать submitAll при добавлении строки, то программа вылетает, но submitAll нужно вызывать, чтобы сразу же сохранить изменения в ячейки таблицы, а не после нажатия на enter
+            self.model.submitAll()
 
     def changeTab(self):
         """
@@ -665,6 +702,30 @@ class tableWithDel(QtWidgets.QWidget):
         #     self.model.setHeaderData(i, Qt.Horizontal, head)
         return model
 
+class WorkingTime(QDialog):
+    def __init__(self, dataWorkingTime=False, id_teacher=False, name = False):
+        super().__init__()
+        self.setWindowTitle('Расписание учителя')
+        self.setWindowIcon(QIcon("teacher.png"))
+
+        print(id_teacher)
+        self.resize(650, 380)
+        lay = QVBoxLayout()
+        self.setLayout(lay)
+        text = QLabel()
+        text.setText('Расписание учителя <<' + name + '>>')
+        text.setAlignment(QtCore.Qt.AlignCenter)
+        lay.addWidget(text)
+        self.table = QTableWidget()
+        self.table.setColumnCount(6)
+        self.table.setRowCount(8)
+        lay.addWidget(self.table)
+        self.table.cellClicked.connect(self.click_work_time)
+        self.table.setHorizontalHeaderLabels(['Понедельник', "Вторник", "Среда", "Четверг", "Пятница", "Суббота"])
+        self.table.setVerticalHeaderLabels(['1','1','2','2','3','3','4','4'])
+
+    def click_work_time(self, r, c):
+        print('click', r, c)
 
 def setStyle(ui):
     ui.setStyleSheet("""
@@ -685,176 +746,3 @@ if __name__ == '__main__':
 
     win = MainWindow()
     sys.exit(app.exec_())
-
-from PyQt5 import QtGui, QtCore, QtWidgets
-import sys, os
-
-# subclass
-
-
-# # the basic main()
-# app = QtWidgets.QApplication(sys.argv)
-# dialog = QtWidgets.QMainWindow()
-# mainWidget = QtWidgets.QWidget()
-# dialog.setCentralWidget(mainWidget)
-# ComboBox = CheckableComboBox()
-# for i in range(6):
-#     ComboBox.addItem("Combobox Item " + str(i))
-#
-# dialog.show()
-# sys.exit(app.exec_())
-
-# if __name__ == "__main__":
-#     qapp = QApplication(sys.argv)
-#     window = MainWindow()
-#
-#     qapp.exec()
-
-# class Widget(Qt.QWidget):
-    # def __init__(self):
-    #     super().__init__()
-    #     layout = Qt.QHBoxLayout(self)
-    #     table = Qt.QTableWidget()
-    #     table.setRowCount(2)
-    #     table.setColumnCount(2)
-    #     self.buttons = {}
-    #     for y in range(2):
-    #         btn = Qt.QPushButton("x")
-    #         self.buttons[btn] = y
-    #         btn.setObjectName(f'button{y}')
-    #         table.setCellWidget(y, 0, btn)
-    #         btn.clicked.connect(lambda: self.out(table))
-    #     layout.addWidget(table)
-    #     print(table.indexAt(btn.pos()).row())
-    #
-    # def out(self, table):
-    #     btn = self.sender()
-    #     row = table.indexAt(btn.pos()).row()
-    #     column = table.indexAt(btn.pos()).column()
-    #     print(self.buttons[btn])
-    #
-    # def __init__(self):
-    #     super().__init__()
-    #     layout = Qt.QHBoxLayout(self)
-    #     tab = QTableView()
-    #     self.model = Qt.QStandardItemModel()
-    #     self.modelsetRowCount(2)
-    #     self.modelsetColumnCount(2)
-    #     self.buttons = {}
-    #     tab.setModel(model)
-    #
-    #     for y in range(2):
-    #         btn = Qt.QPushButton("x")
-    #         self.buttons[btn] = y
-    #         btn.setObjectName(f'button{y}')
-    #
-    #         tab.setEditTriggers(QAbstractItemView.NoEditTriggers)
-    #         tab.setIndexWidget(self.modelindex(y, 0), QPushButton("button"))
-    #
-    #         # table.setCellWidget(y, 0, btn)
-    #         btn.clicked.connect(lambda: self.out(tab))
-    #
-    #     layout.addWidget(tab)
-    #     print(tab.indexAt(btn.pos()).row())
-    #
-    # def out(self, table):
-    #     btn = self.sender()
-    #     row = table.indexAt(btn.pos()).row()
-    #     column = table.indexAt(btn.pos()).column()
-    #     print(self.buttons[btn])
-
-# if __name__ == '__main__':
-#     app = Qt.QApplication([])
-#     w = Widget()
-#     w.show()
-#     app.exec()
-
-# import sys
-# from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
-#                              QApplication, QPushButton)
-#
-#
-# class MainWindow(QMainWindow):
-#     def __init__(self, x):                                         # x <-- 3
-#         super().__init__()
-#
-#         self.centralwidget = QWidget()
-#         self.setCentralWidget(self.centralwidget)
-#         self.lay = QVBoxLayout(self.centralwidget)
-#
-#         for i in range(x):                                          # <---
-#             self.btn = QPushButton('Button {}'.format(i +1), self)
-#             text = self.btn.text()
-#             self.btn.clicked.connect(lambda ch, text=text : print("\nclicked--> {}".format(text)))
-#             self.lay.addWidget(self.btn)
-#
-#         self.numButton = 4
-#
-#         pybutton = QPushButton('Create a button', self)
-#         pybutton.clicked.connect(self.clickMethod)
-#
-#         self.lay.addWidget(pybutton)
-#         self.lay.addStretch(1)
-#
-#     def clickMethod(self):
-#         newBtn = QPushButton('New Button{}'.format(self.numButton), self)
-#         self.numButton += 1
-#         newBtn.clicked.connect(lambda : print("\nclicked===>> {}".format(newBtn.text())))
-#         self.lay.addWidget(newBtn)
-
-
-# if __name__ == "__main__":
-#     app = QApplication(sys.argv)
-#     mainWin = MainWindow(3)                                            # 3 --> x
-#     mainWin.show()
-#     sys.exit( app.exec_() )
-
-# from PyQt5 import QtCore, QtGui, QtWidgets
-#
-# class WidgetGallery(QtWidgets.QDialog):
-#     def __init__(self, parent=None):
-#         super(WidgetGallery, self).__init__(parent)
-#         self.table = QtWidgets.QTableWidget(10, 3)
-#         col_1 = QtWidgets.QTableWidgetItem("first_col")
-#         col_2 =QtWidgets.QTableWidgetItem("second_col")
-#         deleteButton = QtWidgets.QPushButton("delete_this_row")
-#         deleteButton.clicked.connect(self.deleteClicked)
-#         self.table.setItem(0, 0, col_1)
-#         self.table.setItem(0, 1, col_2)
-#         self.table.setCellWidget(0, 2, deleteButton)
-#         self.mainLayout = QtWidgets.QGridLayout(self)
-#         self.mainLayout.addWidget(self.table)
-#
-#     @QtCore.pyqtSlot()
-#     def deleteClicked(self):
-#         button = self.sender()
-#
-#         if button:
-#             row = self.table.indexAt(button.pos()).row()
-#             self.table.removeRow(row)
-#
-# if __name__ == '__main__':
-#     import sys
-#     app = QtWidgets.QApplication(sys.argv)
-#     w = WidgetGallery()
-#     w.show()
-#     sys.exit(app.exec_())
-
-
-# app = QtWidgets.QApplication([])
-#
-# # wordlist for testing
-# wordlist = [''.join(combo) for combo in product('abc', repeat = 4)]
-#
-# combo = QtWidgets.QComboBox()
-# combo.addItems(wordlist)
-#
-# # completers only work for editable combo boxes. QComboBox.NoInsert prevents insertion of the search text
-# combo.setEditable(True)
-# combo.setInsertPolicy(QtWidgets.QComboBox.NoInsert)
-#
-# # change completion mode of the default completer from InlineCompletion to PopupCompletion
-# combo.completer().setCompletionMode(QtWidgets.QCompleter.PopupCompletion)
-#
-# combo.show()
-# app.exec()
