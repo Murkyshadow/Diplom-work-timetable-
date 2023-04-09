@@ -393,6 +393,59 @@ class DataBase():
         self.con.commit()
         cur.close()
 
+    def get_teachers_for_group_in_day(self):
+        """для генерации расписания {day:{numLesson:{group:[teachers]}}}"""
+        cur = self.con.cursor()
+        cur.execute("""SELECT DISTINCT TeacherAttendance.dayOfWeek, TeacherAttendance.lessonNumber, GroupLesson.groupTitle, TeacherAttendance.teacherId
+                        FROM GroupLesson, Lesson, TeacherAttendance WHERE TeacherAttendance.teacherId = Lesson.teacherId and GroupLesson.lessonId = Lesson.id""")
+        data = {}
+        for day, numLesson, group, teacher in cur.fetchall():
+            if day not in data.keys():
+                data[day] = {}
+            if numLesson not in data[day].keys():
+                data[day][numLesson] = {}
+            if group not in data[day][numLesson].keys():
+                data[day][numLesson][group] = []
+            data[day][numLesson][group].append(teacher)
+        return data
+
+    def get_group_teacher_lesson(self):
+        """{group:teacher:[[lessonID, quantityLessonForTwoWeek], ...]}"""
+        cur = self.con.cursor()
+        cur.execute("""SELECT DISTINCT GroupLesson.groupTitle, Lesson.teacherId, GroupLesson.lessonId, Lesson.hour FROM GroupLesson, Lesson WHERE GroupLesson.lessonId = Lesson.id""")
+        query = cur.fetchall()
+        data = {}
+        group_hours = self.get_hours_group()
+        for group, teacher, lesson, hour in query:
+            if group not in data.keys():
+                data[group] = {}
+                group_hours[group] //= 36   # получаем кол-во учебных недель
+            if teacher not in data[group].keys():
+                data[group][teacher] = []
+            data[group][teacher].append([lesson, hour//group_hours[group]])
+        return data, group_hours
+
+    def get_hours_group(self):
+        """общее кол-во часов для группы за семестр"""
+        cur = self.con.cursor()
+        cur.execute("""SELECT GroupLesson.groupTitle, SUM(Lesson.hour) FROM GroupLesson, Lesson WHERE Lesson.id = GroupLesson.lessonId GROUP BY GroupLesson.groupTitle""")
+        group_hours = {}
+        for group, hours in cur.fetchall():
+            group_hours[group] = hours
+        cur.close()
+        return group_hours
+
+    def getAllTeacherTimeWork(self):
+        """получение всех возможных дней работы учителей"""
+        cur = self.con.cursor()
+        cur.execute("""SELECT id FROM Teacher""")
+        teacherID_TimeWork = {}
+        for id in cur.fetchall():
+            id = id[0]
+            teacherID_TimeWork[id] = [self.getTeacherTimeWork(id), self.getTeacherTimeWork(id)]
+
+        cur.close()
+        return teacherID_TimeWork
 
 class table(QtWidgets.QWidget):
     def __init__(self, *args, **kwargs):
@@ -432,7 +485,7 @@ class MainWindow(QMainWindow):
         self.ui.show()
         # self.setFont(QFont("Comics Sans MS", 10))
         # self.clickBtnAdd = False
-        self.xclx = ParsingXLSX(self.DB)
+        # self.xclx = ParsingXLSX(self.DB)
         teacher = tableWithEditing(['Учителя', 'id', '', ''], "Teacher", 'id', self.DB, extra_button=True)
         self.ui.horizontalLayout.addWidget(teacher)
         group = tableWithEditing(['Группы', 'Курс', ''], "Groups", 'title', self.DB)
@@ -440,6 +493,7 @@ class MainWindow(QMainWindow):
         lesson = tableWithEditing(['Занятие', 'Часы', 'Кабинет', 'Учитель', 'id', 'Группа', ''], "Lesson", 'id',
                                   self.DB, self.ui.tabWidget)
         self.ui.horizontalLayout_3.addWidget(lesson)
+        GenerateTimeTable(self.DB)
 
 
 class tableWithEditing(QtWidgets.QWidget):
@@ -933,6 +987,97 @@ class ParsingXLSX():
                     self.DB.addGroupLesson(id_lesson, group)
 
 
+class GenerateTimeTable():
+    def __init__(self, DB):
+        """берет значения из бд: все группы с кол-вом уч. недель + для каждой пары возможные учителя для данной группы + для каждого учителя возможные предметы для данной группы + кол-во занятий данного предмета для данной группы"""
+        self.DB = DB
+
+        self.teacherID_TimeWork = self.DB.getAllTeacherTimeWork()   # {teacherID:{[day:{numLesson:True|False}}, day:{numLesson:True|False}}]} - 2 недели
+        self.teachers_for_group_in_day = self.DB.get_teachers_for_group_in_day()     # {day:{numLesson:{group:[teachers]}}}
+        print(*self.teachers_for_group_in_day.items(), sep='\n')
+        self.count = 0
+        self.group_teacher_lesson, self.all_hours_group = self.DB.get_group_teacher_lesson() # {group:{TeacherID:[[idLesson, кол-во занятий], ...]}} ; {группа:кол-во уч. недель}
+        self.all_group = list(self.all_hours_group.keys())  # названия групп
+        print(self.group_teacher_lesson)
+        self.changesTimeTable = []  # стек изменений расписания
+        self.TimeTable = {}
+        self.getEmpatyTimeTable()
+        self.fill_group_week_quantityLesson()
+        # self.teacherID_TimeWork[1][0][0][0] = 123
+        print(self.teacherID_TimeWork)
+        # print(self.TimeTable)
+        self.placement_of_lesson = [[0,2], [1,3], [0,1], [0,3],  [2,3], [1,2]]  # [start,end]
+        t = Timer()
+        if self.combinationsTimeTable(0, 0, -1, 0, 0, 1):
+            print(self.TimeTable)
+        else:
+            print('не удалось найти нужное расписание')
+        print(self.count)
+        t.end()
+
+    def fill_group_week_quantityLesson(self, quantityLesson = 18):
+        """изначально у каждой группы на каждую неделю выделено по 18 пар"""
+        self.group_week_quantityLesson = {}
+        for group in self.all_group:
+            self.group_week_quantityLesson[group] = [quantityLesson, quantityLesson]
+
+    def getEmpatyTimeTable(self):
+        for group in self.all_hours_group.keys():
+            self.TimeTable[group] = []
+            for week in range(2):
+                self.TimeTable[group].append([])
+                for day in range(6):
+                    self.TimeTable[group][week].append([False]*4)
+
+    def combinationsTimeTable(self, week, day, numGroup, numStartLesson, numEndLesson, nowNumLesson):
+        self.count += 1
+        if nowNumLesson == numEndLesson+1:
+            print(week, day, numGroup)
+            if day == 5 and numGroup + 1 == len(self.all_group):    # следующая неделя
+                week += 1
+                day = 0
+                numGroup = 0
+            elif numGroup + 1 == len(self.all_group):   # следующий день
+                day += 1
+                numGroup = 0
+            else:   # следующая группа
+                numGroup += 1
+
+            if week == 2:
+                print(self.TimeTable)
+                print(self.count)
+                time.sleep(1000)
+                return True
+            f = False
+            for startLesson, endLesson in self.placement_of_lesson:
+                self.group_week_quantityLesson[self.all_group[numGroup]][week] -= (endLesson-startLesson+1)
+                remaining_lesson = self.group_week_quantityLesson[self.all_group[numGroup]][week]
+                remaining_day = 5 - day
+                if (remaining_day == 0 and remaining_lesson == 0) or (remaining_day != 0 and remaining_lesson // remaining_day >= 2 and remaining_lesson // remaining_day <= 4):
+                    f = True
+                    if self.combinationsTimeTable(week, day, numGroup, startLesson, endLesson, startLesson):
+                        return True
+                self.group_week_quantityLesson[self.all_group[numGroup]][week] += (endLesson-startLesson+1)
+
+            if not f:
+                print('ошибка: нет подходящих расстановок пар')
+
+        else:
+            for teacher in self.teachers_for_group_in_day[day][nowNumLesson][self.all_group[numGroup]]:
+                if self.teacherID_TimeWork[teacher][week][day][nowNumLesson]:
+                    self.teacherID_TimeWork[teacher][week][day][nowNumLesson] = False
+                    for i, lessson in enumerate(self.group_teacher_lesson[self.all_group[numGroup]][teacher]):  # перебираем доступные занятия для данного учителя
+                        if self.group_teacher_lesson[self.all_group[numGroup]][teacher][i][1] != 0:
+                            self.TimeTable[self.all_group[numGroup]][week][day][nowNumLesson] = lessson[0]
+                            self.group_teacher_lesson[self.all_group[numGroup]][teacher][i][1] -= 1
+                            if self.combinationsTimeTable(week, day, numGroup, numStartLesson, numEndLesson, nowNumLesson+1):
+                                return True
+                            self.group_teacher_lesson[self.all_group[numGroup]][teacher][i][1] += 1
+                            self.TimeTable[self.all_group[numGroup]][week][day][nowNumLesson] = False
+                    self.teacherID_TimeWork[teacher][week][day][nowNumLesson] = True
+                    # if week == 1 and day == 5 and numGroup == len(self.all_hours_group.keys())-1 and numLesson == 3:
+        #     return
+
 def setStyle(ui):
     """Стиль не для всей программы"""
     ui.setStyleSheet("""
@@ -958,12 +1103,12 @@ def setStyle(ui):
     }
     """)
 
-
 if __name__ == '__main__':
     # l = [1,2,3]
     # print(l[1])
     import PyQt5_stylesheets
     # print(None)
+    sys.setrecursionlimit(4000)
     app = QtWidgets.QApplication([])
     f = open('style_gray.qss')
     style = f.read()
