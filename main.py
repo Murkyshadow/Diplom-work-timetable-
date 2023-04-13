@@ -24,6 +24,8 @@ from PyQt5.QtSql import *
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QAbstractItemView
+import random
+from copy import deepcopy
 
 # from PyQt5.QtCore import Qt
 # q = QSqlQuery("select * FROM Teacher", con)
@@ -447,6 +449,22 @@ class DataBase():
         cur.close()
         return teacherID_TimeWork
 
+    def get_group_lesson(self):
+        cur = self.con.cursor()
+        cur.execute("""SELECT Lesson.hour, lessonId, groupTitle FROM GroupLesson, Lesson WHERE GroupLesson.lessonId = Lesson.id""")
+        number_free_lessons = 12
+        group_lesson = {}
+        group_hours = self.get_hours_group()
+        # print(group_hours)
+        for hour, lesson, group in cur.fetchall():
+            if group not in group_lesson.keys():
+                group_lesson[group] = [None]*number_free_lessons
+            group_lesson[group] += [lesson]*(hour//(group_hours[group]//36))
+            # print([lesson]*(hour//(group_hours[group]//36)))
+            # print(lesson, hour//(group_hours[group]//36), hour, group, group_hours[group])
+        return group_lesson
+
+
 class table(QtWidgets.QWidget):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -493,7 +511,8 @@ class MainWindow(QMainWindow):
         lesson = tableWithEditing(['Занятие', 'Часы', 'Кабинет', 'Учитель', 'id', 'Группа', ''], "Lesson", 'id',
                                   self.DB, self.ui.tabWidget)
         self.ui.horizontalLayout_3.addWidget(lesson)
-        GenerateTimeTable(self.DB)
+        # GenerateTimeTable(self.DB)
+        GeneticGenerationTimeTable(self.DB)
 
 
 class tableWithEditing(QtWidgets.QWidget):
@@ -1078,6 +1097,34 @@ class GenerateTimeTable():
                     # if week == 1 and day == 5 and numGroup == len(self.all_hours_group.keys())-1 and numLesson == 3:
         #     return
 
+
+class GeneticGenerationTimeTable():
+    def __init__(self, DB):
+        """запросы к бд + 1 поколение"""
+        self.DB = DB
+        self.POPULATION_SIZE = 4000
+        self.P_CROSSOVER = 0.9
+        self.P_MUTAYION = 0.1
+        self.MAX_TIME = 5*60
+
+        t = Timer()
+        self.generate_first_generation()
+        print(t.end())
+
+    def generate_first_generation(self):
+        group_lesson = self.DB.get_group_lesson()
+        # print(group_lesson)
+        self.Generation_TimeTables = []
+
+        for i in range(self.POPULATION_SIZE):
+            self.Generation_TimeTables.append(deepcopy(group_lesson))
+            for group in self.Generation_TimeTables[-1]:
+                random.shuffle(self.Generation_TimeTables[i][group])
+        # print(group, *(self.Generation_TimeTables[i-1].items()), sep='\n')
+        # print()
+        # print(group, *(self.Generation_TimeTables[i].items()), sep='\n')
+        # print(*self.Generation_TimeTables, sep='\n')
+
 def setStyle(ui):
     """Стиль не для всей программы"""
     ui.setStyleSheet("""
@@ -1103,11 +1150,19 @@ def setStyle(ui):
     }
     """)
 
+
 if __name__ == '__main__':
-    # l = [1,2,3]
-    # print(l[1])
-    import PyQt5_stylesheets
-    # print(None)
+    # num = {1:['qwe'], 2:['asd']}
+    # a = num.copy()
+    # b = num.copy()
+    # b[1][0]= '123'
+    # print(num, a,b)
+    # from copy import deepcopy
+    # l  = [[1,2], [3,4]]
+    # b = deepcopy(l)
+    # b[0][0] = -1
+    # print(l, b)
+
     sys.setrecursionlimit(4000)
     app = QtWidgets.QApplication([])
     f = open('style_gray.qss')
