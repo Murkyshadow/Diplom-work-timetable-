@@ -239,7 +239,7 @@ class MyCheckableComboBox(QWidget):
 
 class DataBase():
     def __init__(self):
-        self.con = sqlite3.connect('Timetable.db')
+        self.con = sqlite3.connect('../../Downloads/Timetable.db')
         cur = self.con.cursor()
 
         cur.execute("""PRAGMA foreign_keys = ON;""")
@@ -464,6 +464,35 @@ class DataBase():
             # print(lesson, hour//(group_hours[group]//36), hour, group, group_hours[group])
         return group_lesson
 
+    def insert_time_table(self, timeTable):
+        cur = self.con.cursor()
+        cur.execute("""DELETE FROM GroupTimetable""")
+        # weekNumber dayOfWeek lessonNumber lessonId
+        for group_lesson in timeTable:
+            for week in range(2):
+                for day in range(6):
+                    for num_lesson in range(4):
+                        num = week*6*4 + day*4 + num_lesson
+                        lesson = group_lesson[num]
+                        if lesson != None:
+                            cur.execute("""INSERT INTO GroupTimetable VALUES (?,?,?,?)""", (week, day, num_lesson, lesson))
+        cur.close()
+        self.con.commit()
+
+    def getTimeTable(self):
+        cur = self.con.cursor()
+        cur.execute("""SELECT groupTitle, weekNumber, dayOfWeek, lessonNumber, lessonId FROM GroupTimetable, GroupLesson WHERE GroupLesson.lessonId = GroupTimetable.lessonId""")
+        TimeTable = {}
+        for group, week, day, num_lesson, lesson_id in cur.fetchall():
+            if group not in TimeTable.keys():
+                TimeTable[group] = {}
+            if week not in TimeTable[group].keys():
+                TimeTable[group][week] = {}
+            if day not in TimeTable[group][week].keys():
+                TimeTable[group][week][day] = {}
+            TimeTable[group][week][day][num_lesson] = lesson_id
+        return TimeTable
+
 
 class table(QtWidgets.QWidget):
     def __init__(self, *args, **kwargs):
@@ -511,8 +540,35 @@ class MainWindow(QMainWindow):
         lesson = tableWithEditing(['Занятие', 'Часы', 'Кабинет', 'Учитель', 'id', 'Группа', ''], "Lesson", 'id',
                                   self.DB, self.ui.tabWidget)
         self.ui.horizontalLayout_3.addWidget(lesson)
+        timeTable = TimeTable(self.DB, self.ui)
+        # layout = QtWidgets.QGridLayout()
+        # TimeTableTab = TimeTable(self.DB)
+        # self.ui.tabWidget.addTab(QWidget(), "Расписание")
+        # self.ui.tabWidget.
+        # QtWidgets.QTabWidget.addTab()
         # GenerateTimeTable(self.DB)
-        GeneticGenerationTimeTable(self.DB)
+        # GeneticGenerationTimeTable(self.DB)
+
+class TimeTable(QWidget):
+    def __init__(self, DB, ui):
+        super().__init__()
+        self.DB = DB
+        self.table = ui.TimeTable
+
+    def load_TimeTable(self):
+        TimeTable = self.DB.getTimeTable()
+        # numrows = len(data)  # 6 rows in your example
+        # numcols = len(titels)  # 3 columns in your example
+        # self.ui.tableWidget.setColumnCount(numcols)
+        # self.ui.tableWidget.setRowCount(numrows)
+        # self.ui.tableWidget.setHorizontalHeaderLabels(titels)
+        #
+        # for row in range(numrows):
+        #     for column in range(numcols):
+        #         self.ui.tableWidget.setItem(row, column, QTableWidgetItem((data[row][column])))
+        # self.ui.tableWidget.horizontalHeader().setStretchLastSection(True)
+        # self.ui.tableWidget.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+
 
 
 class tableWithEditing(QtWidgets.QWidget):
@@ -1102,7 +1158,7 @@ class GeneticGenerationTimeTable():
     def __init__(self, DB):
         """запросы к бд + 1 поколение"""
         self.DB = DB
-        self.POPULATION_SIZE = 4000
+        self.POPULATION_SIZE = 500
         self.P_CROSSOVER = 0.9
         self.P_MUTAYION = 0.1
         self.MAX_TIME = 5*60
@@ -1124,6 +1180,8 @@ class GeneticGenerationTimeTable():
         # print()
         # print(group, *(self.Generation_TimeTables[i].items()), sep='\n')
         # print(*self.Generation_TimeTables, sep='\n')
+
+
 
 def setStyle(ui):
     """Стиль не для всей программы"""
