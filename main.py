@@ -107,6 +107,8 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QHBoxLayout,
                              QLineEdit, QListView, QToolButton)
 from PyQt5.QtCore import Qt, QAbstractListModel, pyqtSignal, pyqtSlot, QPoint
 from PyQt5.QtGui import QIcon, QFont
+from xlsxwriter.workbook import Workbook                         # pip install XlsxWriter
+from openpyxl import load_workbook
 
 style_sheet = '''
 QListView {
@@ -239,10 +241,11 @@ class MyCheckableComboBox(QWidget):
 
 class DataBase():
     def __init__(self):
-        self.con = sqlite3.connect('../../Downloads/Timetable.db')
+        self.con = sqlite3.connect('Timetable.db')
         cur = self.con.cursor()
 
         cur.execute("""PRAGMA foreign_keys = ON;""")
+
         cur.execute("""CREATE TABLE IF NOT EXISTS Teacher
         (
           fullName TEXT,
@@ -263,8 +266,8 @@ class DataBase():
 
         cur.execute("""CREATE TABLE IF NOT EXISTS GroupTimetable
         (
-          dayOfWeek INT,
           weekNumber INT,
+          dayOfWeek INT,
           lessonNumber INT,
           lessonId INT,
           FOREIGN KEY (lessonId) REFERENCES Lesson(id) ON DELETE SET NULL ON UPDATE CASCADE
@@ -293,6 +296,7 @@ class DataBase():
           FOREIGN KEY (lessonId) REFERENCES Lesson(id) ON DELETE CASCADE ON UPDATE CASCADE,
           FOREIGN KEY (groupTitle) REFERENCES Groups(title) ON DELETE CASCADE ON UPDATE CASCADE
         );""")
+
         cur.close()
 
     def addTeacher(self, teacher):
@@ -381,6 +385,7 @@ class DataBase():
         cur.close()
 
     def getTeacherTimeWork(self, id_teacher):
+        '''рабочие дни'''
         cur = self.con.cursor()
         timeWork = [[False, False, False, False] for _ in range(6)]
         cur.execute(f"""SELECT dayOfWeek, lessonNumber FROM TeacherAttendance WHERE teacherId = {id_teacher}""")
@@ -392,6 +397,12 @@ class DataBase():
         """удаление и добавление рабочего дня для учителя"""
         cur = self.con.cursor()
         cur.execute("""INSERT INTO TeacherAttendance VALUES (?,?,?)""", (day, les, id))
+        self.con.commit()
+        cur.close()
+
+    def delete_work_day(self, id_teacher, day, lesson):
+        cur = self.con.cursor()
+        cur.execute(f"""DELETE FROM TeacherAttendance WHERE dayOfWeek = {day} and lessonNumber = {lesson} and teacherId = {id_teacher}""")
         self.con.commit()
         cur.close()
 
@@ -481,9 +492,10 @@ class DataBase():
 
     def getTimeTable(self):
         cur = self.con.cursor()
-        cur.execute("""SELECT groupTitle, weekNumber, dayOfWeek, lessonNumber, lessonId FROM GroupTimetable, GroupLesson WHERE GroupLesson.lessonId = GroupTimetable.lessonId""")
+        cur.execute("""SELECT groupTitle, weekNumber, dayOfWeek, lessonNumber, GroupLesson.lessonId FROM GroupTimetable, GroupLesson WHERE GroupLesson.lessonId = GroupTimetable.lessonId""")
         TimeTable = {}
-        for group, week, day, num_lesson, lesson_id in cur.fetchall():
+        data = cur.fetchall()
+        for group, week, day, num_lesson, lesson_id in data:
             if group not in TimeTable.keys():
                 TimeTable[group] = {}
             if week not in TimeTable[group].keys():
@@ -492,6 +504,42 @@ class DataBase():
                 TimeTable[group][week][day] = {}
             TimeTable[group][week][day][num_lesson] = lesson_id
         return TimeTable
+
+    def getGroup(self):
+        cur = self.con.cursor()
+        cur.execute("""SELECT title FROM Groups""")
+        groups = []
+        data = cur.fetchall()
+        for group in data:
+            groups.append(group)
+        cur.close()
+        return groups
+
+    def get_LessonID_Teacher(self):
+        cur = self.con.cursor()
+        cur.execute("""SELECT Lesson.id, title, fullName, audienceNumber FROM Lesson, Teacher WHERE Lesson.TeacherId = Teacher.id""")
+        lessonID_Teacher = {}
+        data = cur.fetchall()
+        for lessonID, lesson, teacher, audienceNumber in data:
+            lessonID_Teacher[lessonID] = [lesson, teacher, audienceNumber]
+        cur.close()
+        return lessonID_Teacher
+
+    def getTeacherTimeWorkLesson(self, id):
+        """Получаем расписание учителя"""
+        cur = self.con.cursor()
+        cur.execute(f"""SELECT weekNumber, dayOfWeek, lessonNumber, Lesson.title, GroupLesson.groupTitle  FROM GroupTimetable, Lesson, GroupLesson  WHERE GroupTimetable.lessonId = Lesson.id and Lesson.teacherId = {id} and GroupLesson.lessonId = Lesson.id""")
+        timeTableTeacher = {}
+        for week, day, num_lesson, title_lesson, title_group in cur.fetchall():
+            if week not in timeTableTeacher.keys():
+                timeTableTeacher[week] = {}
+            if day not in timeTableTeacher[week].keys():
+                timeTableTeacher[week][day] = {}
+            if num_lesson not in timeTableTeacher[week][day].keys():
+                timeTableTeacher[week][day][num_lesson] = [title_lesson, []]
+            timeTableTeacher[week][day][num_lesson][1].append(title_group)
+        cur.close()
+        return timeTableTeacher
 
 
 class table(QtWidgets.QWidget):
@@ -526,6 +574,7 @@ class table(QtWidgets.QWidget):
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
+
         self.DB = DataBase()
         self.ui = PyQt5.uic.loadUi("main.ui")
         setStyle(self.ui)
@@ -538,9 +587,9 @@ class MainWindow(QMainWindow):
         group = tableWithEditing(['Группы', 'Курс', ''], "Groups", 'title', self.DB)
         self.ui.horizontalLayout_2.addWidget(group)
         lesson = tableWithEditing(['Занятие', 'Часы', 'Кабинет', 'Учитель', 'id', 'Группа', ''], "Lesson", 'id',
-                                  self.DB, self.ui.tabWidget)
+                                  self.DB, self.ui)
         self.ui.horizontalLayout_3.addWidget(lesson)
-        timeTable = TimeTable(self.DB, self.ui)
+        # timeTable = TimeTable(self.DB, self.ui)
         # layout = QtWidgets.QGridLayout()
         # TimeTableTab = TimeTable(self.DB)
         # self.ui.tabWidget.addTab(QWidget(), "Расписание")
@@ -548,31 +597,118 @@ class MainWindow(QMainWindow):
         # QtWidgets.QTabWidget.addTab()
         # GenerateTimeTable(self.DB)
         # GeneticGenerationTimeTable(self.DB)
+        menuBar = self.ui.menuBar()
+        fileMenu = QMenu("&Файл", self)
+        menuBar.addMenu(fileMenu)
+        self.actionOpen = QAction("Загрузить данные из excel", self)
+        self.actionSave = QAction("Сохранить расписание в excel", self)
+        fileMenu.addAction(self.actionOpen)
+        fileMenu.addAction(self.actionSave)
+        self.actionSave.triggered.connect(self.saveTimeTable)
+        # self.actionOpen.triggered.connect(self.any)
 
-class TimeTable(QWidget):
-    def __init__(self, DB, ui):
-        super().__init__()
-        self.DB = DB
-        self.table = ui.TimeTable
+    # def any(self):
+    #     from openpyxl import Workbook
+    #     # workbook = load_workbook('C:\\Users\\aleks\\OneDrive\\Рабочий стол\\test123.xlsx')
+    #     workbook = Workbook()
+    #     worksheet = workbook.active
+    #     # worksheet = workbook['Sheet1']
+    #     print(worksheet)
+    #     worksheet.cell(row=1, column=2).value = '12345'
+    #     print(worksheet.cell(row=1, column=2).value)
+    #     worksheet.merge_cells(start_row=5, end_row=6, start_column=2, end_column=2)
+    #     workbook.save('C:\\Users\\aleks\\OneDrive\\Рабочий стол\\test123.xlsx')
+    #     workbook.close()
 
-    def load_TimeTable(self):
+    def saveTimeTable(self):
+        from openpyxl import Workbook
+        self.table = self.ui.TimeTable
+        fileName, ok = QFileDialog.getSaveFileName(
+            self,
+            "Сохранить файл",
+            ".",
+            "All Files(*.xlsx)"
+        )
+        print(fileName)
+        if not fileName:
+            return
+
+        workbook = Workbook()
+        worksheet = workbook.active
+
+        # for r, row in enumerate(_list):
+        #     for c, col in enumerate(row):
+        #         worksheet.write(r, c, col)
+        # workbook.close()
+
+
+    # def load_TimeTable(self):
         TimeTable = self.DB.getTimeTable()
-        # numrows = len(data)  # 6 rows in your example
-        # numcols = len(titels)  # 3 columns in your example
-        # self.ui.tableWidget.setColumnCount(numcols)
-        # self.ui.tableWidget.setRowCount(numrows)
-        # self.ui.tableWidget.setHorizontalHeaderLabels(titels)
-        #
-        # for row in range(numrows):
-        #     for column in range(numcols):
-        #         self.ui.tableWidget.setItem(row, column, QTableWidgetItem((data[row][column])))
-        # self.ui.tableWidget.horizontalHeader().setStretchLastSection(True)
-        # self.ui.tableWidget.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        print(TimeTable)
+        groups = self.DB.getTitleGroup()
+        LessonID_teacher = self.DB.get_LessonID_Teacher()
+        print(groups)
+        print(LessonID_teacher)
 
+        # numrows = 6*8
+        # numcols = len(groups)+1  # 3 columns in your example
+        # self.table.setColumnCount(numcols)
+        # self.table.setRowCount(numrows)
+        # self.table.setHorizontalHeaderLabels(['День']+groups)
+
+
+        # self.table.setItemDelegateForColumn(0, VerticalTextDelegate(self))  # дни пишем вертикально
+        # self.table.setItemDelegateForColumn(1, VerticalTextDelegate(self))  # дни пишем вертикально
+
+        # delegate = AlignDelegate(self.table)
+        # self.table.setItemDelegateForColumn(0, delegate)
+
+        # print(['1','1','2','2','3','3','4','4']*6)
+        # self.table.setVerticalHeaderLabels(['1','1','2','2','3','3','4','4']*6)
+        # self.table.setSpan(0, 0, 8, 1)
+        days = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота']
+        for num_day, day in enumerate(days):
+            worksheet.merge_cells(start_row=num_day*8+2, end_row=num_day*8+7, start_column=1, end_column=1)
+            worksheet.cell(row=num_day*8+2, column=1).value = day
+
+        for num_group, group in enumerate(groups):
+            worksheet.cell(row=1, column=num_group+2).value = group
+
+        shift_group = 1
+        for num_group in range(len(groups)):
+            for week in TimeTable[groups[num_group]]:
+                for day in TimeTable[groups[num_group]][week]:
+                    for num_lesson in TimeTable[groups[num_group]][week][day]:
+                        lessonID = TimeTable[groups[num_group]][week][day][num_lesson]
+                        lesson, teacher, audienceNumber = LessonID_teacher[lessonID]
+                        data_for_cell = lesson + '\n' + teacher
+                        row = day*2*4 + num_lesson*2 + week + 2 # плюс 1 тк отсчет в xclx с 1 и заголовки
+                        col = num_group+shift_group + 1
+                        # worksheet.write(day*2*4 + num_lesson*2 + week, num_group+shift_group, data_for_cell)
+                        worksheet.cell(row=row, column=col).value = data_for_cell
+                        if week == 1:
+                            text = worksheet.cell(row=row-1, column=col).value
+                            if text == data_for_cell:
+                                worksheet.merge_cells(start_row=row-1, end_row=row, start_column=col, end_column=col)
+                        # try:
+                        #     if week == 1 and self.table.item(day*2*4 + num_lesson*2, num_group+shift_group).text() == data_for_cell:   # пары верхней и нижней недели совпадают
+                        #         self.table.setSpan(day*2*4 + num_lesson*2, num_group+shift_group, 2, 1)
+                        #     else:
+                        #         self.table.setItem(day*2*4 + num_lesson*2 + week, num_group+shift_group, QTableWidgetItem(data_for_cell))
+                        # except Exception:
+                        #     self.table.setItem(day*2*4 + num_lesson*2 + week, num_group+shift_group, QTableWidgetItem(data_for_cell))
+        # workbook.close()
+        workbook.save(fileName)
+        workbook.close()
+        msg = QMessageBox.information(
+            self,
+            "Success!",
+            f"Данные сохранены в файле: \n{fileName}"
+        )
 
 
 class tableWithEditing(QtWidgets.QWidget):
-    def __init__(self, headTable, titleTable, titlePKColumn, DB, tabWidget=False, extra_button=False, *args, **kwargs):
+    def __init__(self, headTable, titleTable, titlePKColumn, DB, ui=False, extra_button=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.layout = QtWidgets.QGridLayout()
         self.titlePKColumn = titlePKColumn  # для удаления столбца
@@ -602,9 +738,10 @@ class tableWithEditing(QtWidgets.QWidget):
         self.setWidgets(title=True)
         self.model.dataChanged.connect(self.changeTable)
         # self.changeTable()
-        if tabWidget:
-            tabWidget.currentChanged.connect(self.changeTab)
-            self.tabWidget = tabWidget
+        if ui:
+            ui.tabWidget.currentChanged.connect(self.changeTab)
+            self.tabWidget = ui.tabWidget
+            self.ui = ui
         # self.tableData.setTextElideMode(Qt.ElideNone)
         self.tableData.horizontalHeader().setStretchLastSection(True)
         self.tableData.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
@@ -828,7 +965,7 @@ class tableWithEditing(QtWidgets.QWidget):
             if nowId == '' and data:
                 self.updateRow(row, column, int(comboBox.currentText().split('|')[1]))
                 comboBox.setStyleSheet("""background-color:rgb(255,128,138);""")
-            elif nowId != '':
+            elif nowId != '' and data:
                 comboBox.setCurrentText(data[nowId] + ' | ' + str(nowId))
             self.tableData.setIndexWidget(self.model.index(row, column), comboBox)
             comboBox.currentIndexChanged.connect(self.setFromComboBox)
@@ -877,6 +1014,10 @@ class tableWithEditing(QtWidgets.QWidget):
         if self.titleTable == "Lesson" and self.tabWidget.currentIndex() == 2:
             self.model.select()
             self.setWidgets()
+        if self.tabWidget.currentIndex() == 3:
+            print('расписание')
+            time_table = TimeTable(self.DB, self.ui)
+            time_table.load_TimeTable()
 
     def setTableData(self):
         """установка данных в таблицу из БД """
@@ -903,7 +1044,95 @@ class tableWithEditing(QtWidgets.QWidget):
         return model
 
 
+class VerticalTextDelegate(QStyledItemDelegate):
+    def __init__(self, parent):
+        super(VerticalTextDelegate, self).__init__()
+
+    def paint(self, painter, option, index):
+        optionCopy = QStyleOptionViewItem(option)
+        rectCenter = QtCore.QPointF(QtCore.QRectF(option.rect).center())
+        painter.save()
+        painter.translate(rectCenter.x(), rectCenter.y())
+        painter.rotate(-90.0)
+        painter.translate(-rectCenter.x(), -rectCenter.y())
+        optionCopy.rect = painter.worldTransform().mapRect(option.rect)
+
+        # Call the base class implementation
+        super(VerticalTextDelegate, self).paint(painter, optionCopy, index)
+
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        val = QtGui.QSize(self.sizeHint(option, index))
+        return QtGui.QSize(val.height(), val.width())
+
+    # def initStyleOption(self, option, index):
+    #     option.displayAlignment = QtCore.Qt.AlignVCenter
+
+
+class TimeTable(QWidget):
+    def __init__(self, DB, ui):
+        super().__init__()
+        self.DB = DB
+        self.table = ui.TimeTable
+        self.ui = ui
+
+    def load_TimeTable(self):
+        TimeTable = self.DB.getTimeTable()
+        print(TimeTable)
+        groups = self.DB.getTitleGroup()
+        LessonID_teacher = self.DB.get_LessonID_Teacher()
+        print(groups)
+        print(LessonID_teacher)
+
+        numrows = 6*8
+        numcols = len(groups)+1  # 3 columns in your example
+        self.table.setColumnCount(numcols)
+        self.table.setRowCount(numrows)
+        self.table.setHorizontalHeaderLabels(['День']+groups)
+
+
+        self.table.setItemDelegateForColumn(0, VerticalTextDelegate(self))  # дни пишем вертикально
+        # self.table.setItemDelegateForColumn(1, VerticalTextDelegate(self))  # дни пишем вертикально
+
+        # delegate = AlignDelegate(self.table)
+        # self.table.setItemDelegateForColumn(0, delegate)
+
+        print(['1','1','2','2','3','3','4','4']*6)
+        self.table.setVerticalHeaderLabels(['1','1','2','2','3','3','4','4']*6)
+        # self.table.setSpan(0, 0, 8, 1)
+        days = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота']
+        for num_day, day in enumerate(days):
+            self.table.setSpan(num_day*8, 0, 8, 1)
+            item = QTableWidgetItem(day)
+            item.setTextAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignHCenter)
+            self.table.setItem(num_day*8, 0, item)
+
+        shift_group = 1
+        for num_group in range(len(groups)):
+            for week in TimeTable[groups[num_group]]:
+                for day in TimeTable[groups[num_group]][week]:
+                    for num_lesson in TimeTable[groups[num_group]][week][day]:
+                        lessonID = TimeTable[groups[num_group]][week][day][num_lesson]
+                        lesson, teacher, audienceNumber = LessonID_teacher[lessonID]
+                        # QTableWidget.item().text()
+                        # it = self.table.item(day*2*4 + num_lesson*2, num_group+shift_group)
+                        # if it:
+                        #     text = it.text()
+                        # if num_group == 1 and week == 1 and num_lesson == 1:
+                        #     print(num_group, week, num_lesson, num_day)
+                        #     text
+                        try:
+                            if week == 1 and self.table.item(day*2*4 + num_lesson*2, num_group+shift_group).text() == lesson:   # пары верхней и нижней недели совпадают
+                                self.table.setSpan(day*2*4 + num_lesson*2, num_group+shift_group, 2, 1)
+                            else:
+                                self.table.setItem(day*2*4 + num_lesson*2 + week, num_group+shift_group, QTableWidgetItem(lesson))
+                        except Exception:
+                            self.table.setItem(day*2*4 + num_lesson*2 + week, num_group+shift_group, QTableWidgetItem(lesson))
+
+
 class WorkingTime(QDialog):
+    """Расписание учителя"""
     def __init__(self, name, id, DB):
         super().__init__()
         self.DB = DB
@@ -931,10 +1160,11 @@ class WorkingTime(QDialog):
         self.dark_red = [199, 0, 0]
         self.green = [0, 255, 0]
         self.dark_green = [0, 179, 0]
-        self.fill_table_teacher_attendance()
+        self.paint_table_teacher_attendance()
+        self.insert_data_in_table()
 
-        self.table.setSpan(0, 0, 2, 1)
-        self.table.setSpan(1, 0, 4, 4)
+        # self.table.setSpan(0, 0, 2, 1)
+        # self.table.setSpan(1, 0, 4, 4)
 
         self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         for row in range(6):
@@ -967,7 +1197,7 @@ class WorkingTime(QDialog):
                 self.table.item(lesson * 2 + 1, day).setBackground(QtGui.QColor(*self.dark_red))
         self.current_hover = [row, column]
 
-    def fill_table_teacher_attendance(self):    # закрасить при открытии окна
+    def paint_table_teacher_attendance(self):    # закрасить при открытии окна
         attendance = self.attendance
         for day in range(6):
             for lesson in range(4):
@@ -994,12 +1224,34 @@ class WorkingTime(QDialog):
             self.table.item(lesson * 2, day).setBackground(QtGui.QColor(*self.green))
             self.table.item(lesson * 2 + 1, day).setBackground(QtGui.QColor(*self.green))
         else:  # не работает --> красный
-            # self.DB.change_work_day(f"""DELETE FROM TeacherAttendance WHERE dayOfWeek = {day} and lessonNumber = {lesson} and teacherId = {self.id_teacher}""")   # добавляем в бд
+            self.DB.delete_work_day(self.id_teacher, day, lesson)   # добавляем в бд
             self.setStyleSheet("""QTreeView,QListView,QTableView{
                             border: 3px solid #B8B8B8;
                             }""")
             self.table.item(lesson * 2, day).setBackground(QtGui.QColor(*self.red))
             self.table.item(lesson * 2 + 1, day).setBackground(QtGui.QColor(*self.red))
+
+    def insert_data_in_table(self):
+        """Вставляем расписание учителя"""
+        teacherTimeWork = self.DB.getTeacherTimeWorkLesson(self.id_teacher)
+        print(teacherTimeWork)
+        for week in teacherTimeWork:
+            for day in teacherTimeWork[week]:
+                for num_lesson in teacherTimeWork[week][day]:
+                    lesson, groups = teacherTimeWork[week][day][num_lesson]
+                    data_for_set = lesson+'\n'+', '.join(groups)
+                    row = num_lesson+week
+                    col = day
+                    self.table.setItem(row, col, QTableWidgetItem(data_for_set))
+                    # if week == 1:
+                    #     text = None
+                    #     try:
+                    #         text = self.table.item(row-1, col).text()
+                    #     except Exception:
+                    #         pass
+                    #     if text == data_for_set:
+                    #         self.table.setSpan(row-1, col, 2, 1)
+
 
 
 import openpyxl
@@ -1182,7 +1434,6 @@ class GeneticGenerationTimeTable():
         # print(*self.Generation_TimeTables, sep='\n')
 
 
-
 def setStyle(ui):
     """Стиль не для всей программы"""
     ui.setStyleSheet("""
@@ -1210,6 +1461,7 @@ def setStyle(ui):
 
 
 if __name__ == '__main__':
+    # print([1,2]*3)
     # num = {1:['qwe'], 2:['asd']}
     # a = num.copy()
     # b = num.copy()
