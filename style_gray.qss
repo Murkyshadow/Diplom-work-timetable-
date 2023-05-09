@@ -64,6 +64,10 @@ QLineEdit[echoMode="2"] {
 	background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #454648, stop:1 #7A7A7A);
 }
 
+.QPushButton:disabled{
+    background: qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #a0a0a4, stop:1 #bbbbbd);
+}
+
 QPushButton#btnMenu,QPushButton#btnMenu_Min,QPushButton#btnMenu_Max,QPushButton#btnMenu_Close{
 	border-radius:0px;
 	color: #F0F0F0;
@@ -158,16 +162,18 @@ QMenu::separator {
 }
 
 QProgressBar {
-	border-radius: 5px;
+	border-radius: 2px;
 	text-align: center;
-	border: 1px solid #B8B8B8;
+	border: 1px solid #5CACEE;
 }
 
 QProgressBar::chunk {
 	width: 5px;
-	margin: 0.5px;
-	background-color: #454648;
+	margin: 0px;
+	background-color: #1B89CA;
 }
+
+
 
 QSlider::groove:horizontal,QSlider::add-page:horizontal {
 	background: #808080;

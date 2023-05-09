@@ -1,7 +1,11 @@
 import sqlite3
 import time
 from copy import deepcopy
-
+from PyQt5.QtWidgets import QLineEdit
+import PyQt5
+from PyQt5.QtCore import QObject
+from PyQt5.QtCore import QThread
+from PyQt5.QtCore import pyqtSignal
 from deap import base, algorithms
 from deap import creator
 from deap import tools
@@ -10,7 +14,6 @@ import random
 import matplotlib.pyplot as plt
 import numpy as np
 
-
 class Timer():
     def __init__(self):  # таймер
         self.st = time.time()
@@ -18,280 +21,18 @@ class Timer():
     def end(self):
         return float("%.2f" % (time.time() - self.st))
 
-
-class DataBase():
-    def __init__(self):
-        self.con = sqlite3.connect('Timetable.db')
-        cur = self.con.cursor()
-
-        cur.execute("""PRAGMA foreign_keys = ON;""")
-        cur.execute("""CREATE TABLE IF NOT EXISTS Teacher
-        (
-          fullName TEXT,
-          id INTEGER PRIMARY KEY AUTOINCREMENT
-        );
-        """)
-
-        cur.execute("""CREATE TABLE IF NOT EXISTS Lesson
-        (
-          title TEXT,
-          hour INT,
-          audienceNumber TEXT,
-          teacherId INT,
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          FOREIGN KEY (teacherId) REFERENCES Teacher(id) ON DELETE SET NULL ON UPDATE CASCADE
-        );
-        """)
-
-        cur.execute("""CREATE TABLE IF NOT EXISTS GroupTimetable
-        (
-          weekNumber INT,
-          dayOfWeek INT,
-          lessonNumber INT,
-          lessonId INT,
-          FOREIGN KEY (lessonId) REFERENCES Lesson(id) ON DELETE SET NULL ON UPDATE CASCADE
-        );""")
-
-        cur.execute("""CREATE TABLE IF NOT EXISTS Groups
-        (
-          title TEXT,
-          courseNumber INT,
-          PRIMARY KEY (title)
-        );""")
-
-        cur.execute("""CREATE TABLE IF NOT EXISTS TeacherAttendance
-        (
-          dayOfWeek INT,
-          lessonNumber INT,
-          teacherId INT,
-          FOREIGN KEY (teacherId) REFERENCES Teacher(id) ON DELETE CASCADE ON UPDATE CASCADE
-        );
-        """)
-
-        cur.execute("""CREATE TABLE IF NOT EXISTS GroupLesson
-        (
-          lessonId INT,
-          groupTitle TEXT,
-          FOREIGN KEY (lessonId) REFERENCES Lesson(id) ON DELETE CASCADE ON UPDATE CASCADE,
-          FOREIGN KEY (groupTitle) REFERENCES Groups(title) ON DELETE CASCADE ON UPDATE CASCADE
-        );""")
-        cur.close()
-
-    def addTeacher(self, teacher):
-        cur = self.con.cursor()
-        cur.execute(f"""INSERT INTO Teacher VALUES (?,null)""", (teacher,))
-        self.con.commit()
-
-        cur.execute(f"""SELECT id FROM Teacher WHERE fullName = '{teacher}'""")
-        for id in cur.fetchall():
-            pass
-        self.addTeacherTimeWork(id[0])
-        cur.close()
-        return id[0]
-
-    def addLesson(self, teacher, hours, lesson):
-        cur = self.con.cursor()
-        cur.execute(f"""INSERT INTO Lesson VALUES (?,?,?,?,null)""", (lesson, hours, '', teacher))
-        self.con.commit()
-
-        cur.execute(f"""SELECT id FROM Lesson WHERE teacherId = '{teacher}'""")
-        for id in cur.fetchall():
-            pass
-        cur.close()
-        return id[0]
-
-    def addGroup(self, group, courseNumber):
-        cur = self.con.cursor()
-        cur.execute(f"""INSERT INTO Groups VALUES (?,?)""", (group, courseNumber))
-        self.con.commit()
-        cur.close()
-
-    def getTeacher(self):
-        cur = self.con.cursor()
-        cur.execute("""SELECT fullName, id FROM Teacher""")
-        data = {}
-        for rec in cur.fetchall():
-            data[rec[1]] = rec[0]
-        cur.close()
-        return data
-
-    def getTitleTable(self, titleTable, titlePKColumn):
-        self.con.row_factory = sqlite3.Row
-        cursor = self.con.execute(f'select * from {titleTable}')
-        row = cursor.fetchone()
-        names = row.keys()
-        return names.index(titlePKColumn)
-
-    def getTitleGroup(self):
-        cur = self.con.cursor()
-        cur.execute("""SELECT title FROM Groups""")
-        data = [d[0] for d in cur.fetchall()]
-        cur.close()
-        return data
-
-    def delRow(self, id, titleTable, titlePKColumn):
-        cur = self.con.cursor()
-        cur.execute(f"""DELETE FROM {titleTable} WHERE {titlePKColumn} = '{id}'""")
-        self.con.commit()
-        cur.close()
-
-    def addGroupLesson(self, id_lesson, title_group):
-        cur = self.con.cursor()
-        cur.execute(f"""INSERT INTO GroupLesson VALUES (?, ?)""", (id_lesson, title_group))
-        self.con.commit()
-        cur.close()
-
-    def delGroupLesson(self, id_lesson, title_group):
-        cur = self.con.cursor()
-        cur.execute(f"""DELETE FROM GroupLesson WHERE lessonId = '{id_lesson}' AND groupTitle = '{title_group}'""")
-        self.con.commit()
-        cur.close()
-
-    def getGroupLesson(self, idLesson):
-        cur = self.con.cursor()
-        cur.execute(f"""SELECT groupTitle FROM GroupLesson WHERE lessonId = '{idLesson}' """)
-        data = [d[0] for d in cur.fetchall()]
-        cur.close()
-        return data
-
-    def addTeacherTimeWork(self, id_teacher):
-        cur = self.con.cursor()
-        for day in range(6):
-            for lesson in range(4):
-                cur.execute(f"""INSERT INTO TeacherAttendance VALUES (?,?,?)""", (day, lesson, id_teacher))
-        self.con.commit()
-        cur.close()
-
-    def getTeacherTimeWork(self, id_teacher):
-        cur = self.con.cursor()
-        timeWork = [[False, False, False, False] for _ in range(6)]
-        cur.execute(f"""SELECT dayOfWeek, lessonNumber FROM TeacherAttendance WHERE teacherId = {id_teacher}""")
-        for day, lesson in cur.fetchall():
-            timeWork[day][lesson] = True
-        return timeWork
-
-    def add_work_day(self, day, les, id):
-        """удаление и добавление рабочего дня для учителя"""
-        cur = self.con.cursor()
-        cur.execute("""INSERT INTO TeacherAttendance VALUES (?,?,?)""", (day, les, id))
-        self.con.commit()
-        cur.close()
-
-    def get_teachers_for_group_in_day(self):
-        """для генерации расписания {day:{numLesson:{group:[teachers]}}}"""
-        cur = self.con.cursor()
-        cur.execute("""SELECT DISTINCT TeacherAttendance.dayOfWeek, TeacherAttendance.lessonNumber, GroupLesson.groupTitle, TeacherAttendance.teacherId
-                        FROM GroupLesson, Lesson, TeacherAttendance WHERE TeacherAttendance.teacherId = Lesson.teacherId and GroupLesson.lessonId = Lesson.id""")
-        data = {}
-        for day, numLesson, group, teacher in cur.fetchall():
-            if day not in data.keys():
-                data[day] = {}
-            if numLesson not in data[day].keys():
-                data[day][numLesson] = {}
-            if group not in data[day][numLesson].keys():
-                data[day][numLesson][group] = []
-            data[day][numLesson][group].append(teacher)
-        return data
-
-    def get_group_teacher_lesson(self):
-        """{group:teacher:[[lessonID, quantityLessonForTwoWeek], ...]}"""
-        cur = self.con.cursor()
-        cur.execute("""SELECT DISTINCT GroupLesson.groupTitle, Lesson.teacherId, GroupLesson.lessonId, Lesson.hour FROM GroupLesson, Lesson WHERE GroupLesson.lessonId = Lesson.id""")
-        query = cur.fetchall()
-        data = {}
-        group_hours = self.get_hours_group()
-        for group, teacher, lesson, hour in query:
-            if group not in data.keys():
-                data[group] = {}
-                group_hours[group] //= 36   # получаем кол-во учебных недель
-            if teacher not in data[group].keys():
-                data[group][teacher] = []
-            data[group][teacher].append([lesson, hour//group_hours[group]])
-        return data, group_hours
-
-    def get_hours_group(self):
-        """общее кол-во часов для группы за семестр"""
-        cur = self.con.cursor()
-        cur.execute("""SELECT GroupLesson.groupTitle, SUM(Lesson.hour) FROM GroupLesson, Lesson WHERE Lesson.id = GroupLesson.lessonId GROUP BY GroupLesson.groupTitle""")
-        group_hours = {}
-        for group, hours in cur.fetchall():
-            group_hours[group] = hours
-        cur.close()
-        return group_hours
-
-    def getAllTeacherTimeWork(self):
-        """получение всех возможных дней работы учителей"""
-        cur = self.con.cursor()
-        cur.execute("""SELECT id FROM Teacher""")
-        teacherID_TimeWork = {}
-        for id in cur.fetchall():
-            id = id[0]
-            teacherID_TimeWork[id] = [self.getTeacherTimeWork(id), self.getTeacherTimeWork(id)]
-
-        cur.close()
-        return teacherID_TimeWork
-
-    def get_group_lesson(self):
-        cur = self.con.cursor()
-        cur.execute("""SELECT Lesson.hour, lessonId, groupTitle FROM GroupLesson, Lesson WHERE GroupLesson.lessonId = Lesson.id ORDER BY groupTitle""")
-        number_free_lessons = 12
-        group_lesson = []
-        group_hours = self.get_hours_group()
-        # print(group_hours)
-        index_lesson = []
-        index_group = []
-        group_before = None
-        for hour, lesson, group in cur.fetchall():
-            if group_before != group:
-                group_before = group
-                i = 0 + number_free_lessons
-                group_lesson.append([i for i in range(number_free_lessons)])
-                index_group.append(group)
-                index_lesson.append([None] * number_free_lessons)
-            group_lesson[-1] += [i for i in range(i, i + hour // (group_hours[group] // 36))]
-            i += hour // (group_hours[group] // 36)
-            index_lesson[-1] += [lesson] * (hour // (group_hours[group] // 36))
-
-            # print([lesson]*(hour//(group_hours[group]//36)))
-            # print(lesson, hour//(group_hours[group]//36), hour, group, group_hours[group])
-        return group_lesson, index_lesson, index_group
-
-    def get_lessonID_teacherID(self):
-        cur = self.con.cursor()
-        cur.execute("""SELECT id, teacherId FROM Lesson""")
-        lessonID_teacherID = {}
-        for lessonID, teacherID in cur.fetchall():
-            lessonID_teacherID[lessonID] = teacherID
-        cur.close()
-        return lessonID_teacherID
-
-    def insert_time_table(self, timeTable):
-        cur = self.con.cursor()
-        cur.execute("""DELETE FROM GroupTimetable""")
-        # weekNumber dayOfWeek lessonNumber lessonId
-        for group_lesson in timeTable:
-            for week in range(2):
-                for day in range(6):
-                    for num_lesson in range(4):
-                        num = week*6*4 + day*4 + num_lesson
-                        lesson = group_lesson[num]
-                        if lesson != None:
-                            cur.execute("""INSERT INTO GroupTimetable VALUES (?,?,?,?)""", (week, day, num_lesson, lesson))
-        cur.close()
-        self.con.commit()
-
-
 class GeneticGenerationTimeTable():
-    def __init__(self):
+    def __init__(self, group_lesson, AllTeacherTimeWork, lessonID_teacherID, parLesson_group):
         """запросы к бд + 1 поколение"""
-        self.DB = DataBase()
-        self.group_lesson, self.index_lesson, self.index_group = self.DB.get_group_lesson()  # id_lesson - по индексу обращаемся к уроку
-        self.teacherID_TimeWork = self.DB.getAllTeacherTimeWork()  # {teacherID:[{day:{numLesson:True|False}}, day:{numLesson:True|False}}]} - 2 недели
+        # QLineEdit.
+        # self.DB = DB
+        self.group_lesson, self.index_lesson, self.index_group = group_lesson  # id_lesson - по индексу обращаемся к уроку
+        self.teacherID_TimeWork = AllTeacherTimeWork  # {teacherID:[{day:{numLesson:True|False}}, day:{numLesson:True|False}}]} - 2 недели
+        self.parLesson_group = parLesson_group
         # self.group_lesson = [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]]
         # self.index_lesson = [[None, 1, 3], [None, 2, 4]]
         # self.teacherID_TimeWork = {1: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 2: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]]}
         # self.lesson_teacherID = {1: 1, 2: 1, 3: 1, 4: 1}
-
 
         # более полные данные
         # self.group_lesson = [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 3, 4, 4, 4, 5, 5, 5, 6, 7, 7, 8, 8, 8, 8, 8, 8, 9, 9, 9, 10, 10, 10, 11, 11, 12, 12, 12, 13, 13, 13, 14, 14], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 5, 5, 6, 6, 7, 7, 7, 8, 8, 9, 10, 10, 10, 11, 12, 12, 12, 13, 13, 13, 14, 14, 14, 14, 14, 14], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 3, 4, 4, 4, 5, 5, 5, 6, 7, 7, 8, 8, 9, 9, 9, 10, 10, 11, 11, 11, 12, 12, 12, 13, 13, 13, 14, 14, 14, 14, 14, 14], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 5, 5, 6, 6, 6, 7, 7, 8, 8, 8, 9, 9, 10, 11, 11, 11, 12, 13, 13, 13, 14, 14, 14, 14, 14, 14], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 5, 5, 6, 6, 6, 6, 6, 6, 7, 7, 7, 8, 8, 8, 9, 9, 10, 11, 11, 11, 12, 13, 13, 13, 14, 14], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 4, 4, 5, 5, 5, 6, 6, 6, 7, 7, 7, 8, 8, 9, 10, 10, 10, 11, 12, 12, 12, 12, 12, 12, 13, 13, 14, 14, 14], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 3, 3, 3, 4, 5, 5, 5, 6, 7, 8, 9, 9, 10, 10, 10, 11, 11, 11, 11, 11, 11, 12, 12, 13, 14, 14, 14, 14, 14, 15, 16, 16], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 3, 3, 3, 4, 5, 5, 5, 6, 6, 6, 7, 7, 7, 8, 9, 9, 10, 10, 10, 11, 11, 11, 11, 11, 11, 12, 12, 12, 13, 13, 14, 14], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6, 7, 7, 7, 8, 9, 9, 10, 10, 10, 11, 11, 11, 11, 11, 11, 12, 12, 13, 13, 13, 14, 14]]
@@ -299,20 +40,22 @@ class GeneticGenerationTimeTable():
         # self.teacherID_TimeWork = {1: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 2: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 3: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 4: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 5: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 6: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 7: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 8: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 9: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 10: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 11: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 12: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 13: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 14: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 15: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 16: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 17: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 18: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 19: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]]}
         # self.lesson_teacherID = {1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1, 9: 1, 10: 2, 11: 2, 12: 2, 13: 2, 14: 2, 15: 2, 16: 2, 17: 2, 18: 2, 19: 2, 20: 2, 21: 3, 22: 3, 23: 3, 24: 3, 25: 3, 26: 3, 27: 3, 28: 4, 29: 4, 30: 4, 31: 4, 32: 4, 33: 5, 34: 5, 35: 5, 36: 5, 37: 5, 38: 5, 39: 5, 40: 5, 41: 5, 42: 6, 43: 6, 44: 6, 45: 6, 46: 6, 47: 6, 48: 6, 49: 6, 50: 6, 51: 6, 52: 6, 53: 6, 54: 6, 55: 6, 56: 6, 57: 6, 58: 6, 59: 6, 60: 6, 61: 7, 62: 7, 63: 7, 64: 7, 65: 7, 66: 8, 67: 8, 68: 8, 69: 8, 70: 8, 71: 9, 72: 9, 73: 9, 74: 9, 75: 9, 76: 10, 77: 10, 78: 10, 79: 10, 80: 10, 81: 10, 82: 10, 83: 10, 84: 10, 85: 11, 86: 11, 87: 11, 88: 11, 89: 11, 90: 11, 91: 11, 92: 11, 93: 11, 94: 11, 95: 11, 96: 11, 97: 11, 98: 12, 99: 12, 100: 12, 101: 12, 102: 12, 103: 12, 104: 12, 105: 12, 106: 12, 107: 12, 108: 12, 109: 12, 110: 13, 111: 13, 112: 13, 113: 14, 114: 14, 115: 14, 116: 14, 117: 15, 118: 16, 119: 16, 120: 17, 121: 17, 122: 17, 123: 17, 124: 17, 125: 17, 126: 17, 127: 18, 128: 19}
         # self.index_group = None # пока не надо
-        self.lesson_teacherID = self.DB.get_lessonID_teacherID()
-        print(self.lesson_teacherID)
+        self.lesson_teacherID = lessonID_teacherID
+        # print(self.lesson_teacherID)
         # print(self.group_lesson, self.index_lesson, self.teacherID_TimeWork, self.lesson_teacherID, sep='\n')
+
 
     def random_timeTable(self):
         """первое поколение"""
         TimeTable = deepcopy(self.group_lesson)
         for num_group in range(len(TimeTable)):
             random.shuffle(TimeTable[num_group])
-        individ = Individual(TimeTable, self.TimeTable_Fitness(TimeTable))
+        individ = Individual(TimeTable, self.TimeTable_Fitness(TimeTable), info = 'Первое поколение')
         # return creator.Individual(TimeTable)
         return individ
 
     def TimeTable_Fitness(self, individual):
+        parLesson = self.parLesson_group
         fitness = 0
         teacherID_TimeWork = deepcopy(self.teacherID_TimeWork)
         for num_group in range(len(individual)):
@@ -332,11 +75,17 @@ class GeneticGenerationTimeTable():
                                 # print('методическое расписание учителя')
                             elif teacherID_TimeWork[self.lesson_teacherID[lesson]][week][day][num_lesson%4] == True:  # отмечаем, что пара
                                 teacherID_TimeWork[self.lesson_teacherID[lesson]][week][day][num_lesson%4] = -1
-                            else:   # уже есть пара у учителя
+                            # elif lesson in parLesson.keys():   # спаренная пара
+                            #     parLesson[lesson][self.index_group[num_group]].append(num_lesson)
+                            elif lesson not in parLesson:   # уже есть пара у учителя
                                 fitness += 50
                                 # print('уже есть пара')
-                            # if week == 1 and self.index_lesson[num_group][individual[num_group][num_lesson]] != self.index_lesson[num_group][individual[num_group][num_lesson-24]]:
-                            #     fitness += 0.001
+                            if week == 1 and self.index_lesson[num_group][individual[num_group][num_lesson]] != self.index_lesson[num_group][individual[num_group][num_lesson-24]]:
+                                fitness += 0.001
+                            try:    # для спаренных пар
+                                parLesson[lesson][self.index_group[num_group]].append(num_lesson)
+                            except KeyError:
+                                pass
 
                         elif count_lesson_day >= 1 and windowsGroup == False:     # нет пары (окно)
                             windowsGroup = True
@@ -348,6 +97,12 @@ class GeneticGenerationTimeTable():
                         # print('мало пар')
                     count_lesson_week += count_lesson_day
                 fitness += 5 * abs(18-count_lesson_week) # должно быть 18 пар в неделю
+
+        # проверяем разницу для спаренных пар
+        for lessonID in parLesson:
+            groups = list(parLesson[lessonID].keys())
+            for i in range(1, len(parLesson[lessonID])):
+                fitness += len(set(parLesson[lessonID][groups[i]]) - set(parLesson[lessonID][groups[i-1]])) * 20
 
         for id in teacherID_TimeWork:
             for week in range(2):
@@ -367,14 +122,18 @@ class GeneticGenerationTimeTable():
                         fitness += 5
                     if count_lesson_day == 1:   # минимум 2 пары в день
                         fitness += 10
+
         return fitness
 
     def cxOrder(self, ind1, ind2):
         ind1 = deepcopy(ind1)
         ind2 = deepcopy(ind2)
-        size = min(len(ind1), len(ind2))
+        size = len(ind1)
         a, b = random.sample(range(size), 2)
-        a, b = min([a,b]), max([a,b])
+        a, b = min([a, b]), max([a, b])
+        while a==0 and b==size:
+            a, b = random.sample(range(size), 2)
+            a, b = min([a, b]), max([a, b])
 
         for num_group in range(a, b):
             ind1[num_group], ind2[num_group] = ind2[num_group], ind1[num_group]
@@ -389,20 +148,21 @@ class GeneticGenerationTimeTable():
                 for i in range(len(individual[numGroup])):
                     # tools.mutShuffleIndexes(individual, indpb)
                     if random.random() < 0.015:  # сила мутации в расписании групппы
-                        type_mutation = random.sample([2], 1)
-                        num_day = i // 4
-                        if type_mutation == 0:  # меняем дни местами
-                            random_day = random.randint(0, 47//4)
-                            for shift_lesson in range(0,4):
-                                individual[numGroup][num_day*4+shift_lesson], individual[numGroup][random_day*4+shift_lesson] = individual[numGroup][random_day*4+shift_lesson], individual[numGroup][num_day*4+shift_lesson]
-                        # elif type_mutation == 1:    # перемешиваем пары за день
-                        #     day_lesson = individual[numGroup][num_day*4:(num_day+1)*4]
-                        #     random.shuffle(day_lesson)
-                        #     individual[numGroup][num_day * 4:(num_day+1)*4] = day_lesson
-                        else:   # меняем 2 пары местами
-
-                            random_gen = random.randint(0, len(individual[numGroup])-1)
-                            individual[numGroup][i], individual[numGroup][random_gen] = individual[numGroup][random_gen], individual[numGroup][i]
+                        # type_mutation = random.sample([2], 1)
+                        # num_day = i // 4
+                        # if type_mutation == 0:  # меняем дни местами
+                        #     random_day = random.randint(0, 47//4)
+                        #     for shift_lesson in range(0,4):
+                        #         individual[numGroup][num_day*4+shift_lesson], individual[numGroup][random_day*4+shift_lesson] = individual[numGroup][random_day*4+shift_lesson], individual[numGroup][num_day*4+shift_lesson]
+                        # # elif type_mutation == 1:    # перемешиваем пары за день
+                        # #     day_lesson = individual[numGroup][num_day*4:(num_day+1)*4]
+                        # #     random.shuffle(day_lesson)
+                        # #     individual[numGroup][num_day * 4:(num_day+1)*4] = day_lesson
+                        # else:   # меняем 2 пары местами
+                        random_gen = random.randint(0, len(individual[numGroup])-1)
+                        while individual[numGroup][i] == individual[numGroup][random_gen]:
+                            random_gen = random.randint(0, len(individual[numGroup]) - 1)
+                        individual[numGroup][i], individual[numGroup][random_gen] = individual[numGroup][random_gen], individual[numGroup][i]
 
                         # for _ in range(random.randint(1,3)):
                         #     random_gen = random.randint(0, len(individual[numGroup])-1)
@@ -411,15 +171,13 @@ class GeneticGenerationTimeTable():
 
         return individual
 
-    def save_TimeTable_in_DB(self, TimeTable):
-        # self.DB.insert_time_table
+    def get_TimeTable_for_save(self, TimeTable):
         TimeTable_for_save = []
         for num_group, group in enumerate(TimeTable):
             TimeTable_for_save.append([])
             for ind_lesson in group:
                 TimeTable_for_save[-1].append(self.index_lesson[num_group][ind_lesson])
-        # print(TimeTable_for_save)
-        self.DB.insert_time_table(TimeTable_for_save)
+        return TimeTable_for_save
 
     def tournament_selection(self, population, k, num_parents):
         # population - список особей
@@ -429,140 +187,140 @@ class GeneticGenerationTimeTable():
         # создаем пул доступных особей
         available_parents = list(range(len(population)))
         selected_parents = []
-
         for i in range(num_parents):
-            # выбираем k участников для турнира
-            tournament = random.sample(available_parents, k)
-
-            # находим лучшую особь по заданному критерию
+            # выбираем k участников для турнира и находим лучшую особь по заданному критерию
             best = min(random.sample(available_parents, k), key=lambda x: population[x].fitness)
-
             # добавляем лучшую особь в список отобранных родительских особей
             selected_parents.append(population[best])
-
             # удаляем особь из пула доступных особей
             available_parents.remove(best)
-
             # если пул доступных особей пуст, перезаполняем его
             # if not available_parents:
             #     available_parents = list(range(len(population)))
 
-        return selected_parents
+        return selected_parents + self.best_individs
+
+    def save_best_individ(self, population, k):
+        from math import inf
+        if k <= 0:
+            index_min = min(range(len(population)), key=lambda i: population[i].fitness)
+            min_individ = population[index_min]
+            return min_individ.fitness, min_individ.info
+
+        self.best_individs = sorted(population[:k], key=lambda ind: ind.fitness)
+        # best_fitness = inf
+        # for _ in range(k):
+        #     index_min = min(range(len(population)), key=lambda i: population[i].fitness)
+        #     min_individ = population[index_min]
+        #     self.best_individs.append(min_individ)
+        #     # if min_individ.fitness < best_fitness:
+        #     #     best_fitness = min_individ.fitness
+        #     population.pop(index_min)
+        for individ in population[k:]:
+            if individ.fitness < self.best_individs[-1].fitness:
+                self.best_individs[-1] = individ
+                i = k-2
+                while i != 0 and self.best_individs[i+1].fitness < self.best_individs[i].fitness:
+                    self.best_individs[i + 1].fitness, self.best_individs[i].fitness = self.best_individs[i].fitness, self.best_individs[i+1].fitness
+
+        index_min = min(range(len(self.best_individs)), key=lambda i: self.best_individs[i].fitness)
+        return self.best_individs[index_min].fitness, self.best_individs[index_min].info
 
 class Individual():
-    def __init__(self, data, fitness):
+    def __init__(self, data, fitness, info):
         self.timeTable = data
         self.fitness = fitness
+        self.info = info
 
-class startGA():
-    def __init__(self):
-        generation = GeneticGenerationTimeTable()
+class GA(QThread):
+    result = pyqtSignal(list)
+    progress = pyqtSignal(int)
+    def __init__(self,  group_lesson, AllTeacherTimeWork, lessonID_teacherID, parLesson_group):
+        super(GA, self).__init__()
+        self.group_lesson, self.AllTeacherTimeWork, self.lessonID_teacherID, self.parLesson_group =  group_lesson, AllTeacherTimeWork, lessonID_teacherID, parLesson_group
+        # generation = GeneticGenerationTimeTable(DB)
         # print(generation.TimeTable_Fitness([[34, 47, 27, 24, 31, 6, 1, 21, 38, 39, 40, 30, 7, 8, 22, 46, 18, 36, 33, 12, 4, 2, 20, 26, 10, 29, 35, 14, 0, 32, 41, 37, 5, 23, 28, 25, 11, 45, 16, 43, 15, 44, 13, 19, 3, 17, 42, 9], [18, 28, 30, 6, 35, 16, 42, 38, 0, 7, 33, 40, 19, 47, 44, 4, 11, 34, 21, 32, 36, 12, 27, 8, 1, 31, 22, 13, 23, 43, 26, 14, 29, 17, 9, 10, 2, 46, 24, 37, 15, 20, 41, 5, 39, 25, 45, 3], [26, 21, 18, 43, 23, 39, 17, 13, 3, 40, 38, 34, 32, 7, 24, 2, 27, 1, 22, 6, 31, 29, 15, 9, 0, 19, 14, 28, 12, 45, 41, 35, 8, 44, 33, 47, 46, 20, 5, 11, 36, 4, 10, 37, 30, 16, 25, 42], [25, 34, 2, 5, 6, 30, 44, 12, 29, 22, 17, 3, 42, 7, 40, 1, 43, 20, 16, 33, 47, 41, 39, 21, 4, 27, 26, 10, 36, 18, 32, 38, 46, 24, 19, 8, 9, 23, 15, 31, 14, 28, 37, 35, 11, 0, 45, 13], [39, 22, 31, 2, 46, 47, 13, 6, 4, 10, 33, 40, 25, 34, 32, 3, 1, 17, 36, 24, 44, 38, 37, 18, 23, 5, 15, 8, 27, 26, 21, 12, 20, 28, 45, 43, 11, 7, 42, 29, 0, 9, 35, 30, 14, 41, 19, 16], [40, 30, 4, 1, 45, 21, 17, 26, 43, 39, 19, 28, 32, 34, 3, 8, 22, 18, 33, 42, 20, 9, 11, 24, 6, 10, 15, 38, 16, 31, 44, 41, 0, 36, 46, 7, 27, 12, 14, 23, 25, 35, 47, 29, 13, 37, 5, 2], [17, 28, 22, 16, 20, 47, 41, 9, 36, 26, 34, 3, 21, 0, 18, 4, 25, 27, 35, 19, 2, 11, 14, 12, 1, 42, 39, 44, 15, 10, 31, 6, 38, 5, 40, 8, 37, 43, 30, 24, 32, 45, 46, 33, 7, 23, 13, 29], [7, 21, 16, 36, 45, 27, 41, 10, 12, 19, 47, 33, 15, 28, 25, 26, 35, 14, 9, 8, 24, 29, 11, 6, 17, 18, 39, 31, 42, 23, 13, 37, 2, 44, 46, 38, 30, 4, 43, 0, 3, 34, 22, 32, 40, 5, 20, 1], [5, 13, 27, 44, 32, 39, 12, 40, 33, 15, 18, 42, 34, 21, 2, 11, 0, 35, 17, 4, 36, 16, 30, 1, 38, 28, 19, 8, 3, 22, 14, 9, 10, 41, 25, 45, 20, 6, 26, 7, 29, 23, 43, 31, 46, 37, 47, 24]])[0])
         # generation.save_TimeTable_in_DB([[34, 47, 27, 24, 31, 6, 1, 21, 38, 39, 40, 30, 7, 8, 22, 46, 18, 36, 33, 12, 4, 2, 20, 26, 10, 29, 35, 14, 0, 32, 41, 37, 5, 23, 28, 25, 11, 45, 16, 43, 15, 44, 13, 19, 3, 17, 42, 9], [18, 28, 30, 6, 35, 16, 42, 38, 0, 7, 33, 40, 19, 47, 44, 4, 11, 34, 21, 32, 36, 12, 27, 8, 1, 31, 22, 13, 23, 43, 26, 14, 29, 17, 9, 10, 2, 46, 24, 37, 15, 20, 41, 5, 39, 25, 45, 3], [26, 21, 18, 43, 23, 39, 17, 13, 3, 40, 38, 34, 32, 7, 24, 2, 27, 1, 22, 6, 31, 29, 15, 9, 0, 19, 14, 28, 12, 45, 41, 35, 8, 44, 33, 47, 46, 20, 5, 11, 36, 4, 10, 37, 30, 16, 25, 42], [25, 34, 2, 5, 6, 30, 44, 12, 29, 22, 17, 3, 42, 7, 40, 1, 43, 20, 16, 33, 47, 41, 39, 21, 4, 27, 26, 10, 36, 18, 32, 38, 46, 24, 19, 8, 9, 23, 15, 31, 14, 28, 37, 35, 11, 0, 45, 13], [39, 22, 31, 2, 46, 47, 13, 6, 4, 10, 33, 40, 25, 34, 32, 3, 1, 17, 36, 24, 44, 38, 37, 18, 23, 5, 15, 8, 27, 26, 21, 12, 20, 28, 45, 43, 11, 7, 42, 29, 0, 9, 35, 30, 14, 41, 19, 16], [40, 30, 4, 1, 45, 21, 17, 26, 43, 39, 19, 28, 32, 34, 3, 8, 22, 18, 33, 42, 20, 9, 11, 24, 6, 10, 15, 38, 16, 31, 44, 41, 0, 36, 46, 7, 27, 12, 14, 23, 25, 35, 47, 29, 13, 37, 5, 2], [17, 28, 22, 16, 20, 47, 41, 9, 36, 26, 34, 3, 21, 0, 18, 4, 25, 27, 35, 19, 2, 11, 14, 12, 1, 42, 39, 44, 15, 10, 31, 6, 38, 5, 40, 8, 37, 43, 30, 24, 32, 45, 46, 33, 7, 23, 13, 29], [7, 21, 16, 36, 45, 27, 41, 10, 12, 19, 47, 33, 15, 28, 25, 26, 35, 14, 9, 8, 24, 29, 11, 6, 17, 18, 39, 31, 42, 23, 13, 37, 2, 44, 46, 38, 30, 4, 43, 0, 3, 34, 22, 32, 40, 5, 20, 1], [5, 13, 27, 44, 32, 39, 12, 40, 33, 15, 18, 42, 34, 21, 2, 11, 0, 35, 17, 4, 36, 16, 30, 1, 38, 28, 19, 8, 3, 22, 14, 9, 10, 41, 25, 45, 20, 6, 26, 7, 29, 23, 43, 31, 46, 37, 47, 24]])
         # print(generation.TimeTable_Fitness([[2, 15, 47, 16, 45, 19, 9, 3, 13, 6, 38, 0, 5, 37, 33, 27, 29, 14, 21, 20, 25, 39, 34, 30, 8, 42, 26, 18, 36, 17, 12, 4, 31, 32, 28, 43, 11, 10, 22, 24, 44, 41, 46, 35, 23, 40, 7, 1], [42, 32, 35, 16, 8, 3, 41, 28, 15, 30, 34, 38, 14, 24, 19, 18, 0, 5, 26, 29, 10, 9, 23, 17, 25, 37, 4, 6, 1, 47, 12, 31, 7, 2, 20, 21, 44, 22, 40, 45, 46, 33, 39, 36, 11, 13, 27, 43]]))
         # print(generation.save_TimeTable_in_DB([[18, 27, 26, 42, 4, 38, 13, 6, 1, 34, 24, 5, 32, 43, 41, 44, 22, 16, 0, 8, 31, 37, 23, 28, 9, 11, 46, 17, 29, 36, 47, 30, 21, 15, 33, 7, 3, 25, 45, 39, 20, 19, 40, 14, 10, 2, 12, 35], [32, 33, 46, 2, 1, 13, 31, 37, 24, 23, 36, 30, 0, 29, 20, 26, 44, 5, 43, 3, 28, 27, 45, 4, 15, 34, 12, 9, 39, 22, 10, 8, 35, 42, 19, 21, 6, 47, 18, 7, 11, 41, 14, 40, 17, 25, 38, 16]]))
+        # for POPULATION_SIZE in range(50, 131, 20):
+        #     print(POPULATION_SIZE)
+        #     middle_time = 0
+        #     middle_combined_lesson = 0
+        #     n = 5
+        #     for _ in range(1,1+n):
 
+    def run(self):
         # константы генетического алгоритма
-        POPULATION_SIZE = 70       # количество индивидуумов в популяции
-        P_CROSSOVER = 0.4           # вероятность скрещивания
-        P_MUTATION = 0.2            # вероятность мутации индивидуума
-        MAX_GENERATIONS = 600       # максимальное количество поколений
-        HALL_OF_FAME_SIZE = 1
-        k = 3
-        best_fitness = 1
-
+        print('start generate')
+        generation = GeneticGenerationTimeTable(self.group_lesson, self.AllTeacherTimeWork, self.lessonID_teacherID, self.parLesson_group)
+        POPULATION_SIZE = 60       # количество индивидуумов в популяции
+        P_CROSSOVER = 0.4          # вероятность скрещивания
+        P_MUTATION = 0.2           # вероятность мутации индивидуума
+        # MAX_GENERATIONS = 600       # максимальное количество поколений
+        # HALL_OF_FAME_SIZE = 1
+        k = 3   # участников в турнире
         population = [generation.random_timeTable() for _ in range(POPULATION_SIZE)]
         count = 0
         t = Timer()
-        while best_fitness != 0:
+        start_best_fitness, info = generation.save_best_individ(population=population, k=0)  # сохранение лучшего индивида
+        fitness_for_reduction_crossover = start_best_fitness // (P_CROSSOVER*100)     # через определенную приспоcобленность уменьшать шанс скрещивания
+        poin_fitness_reduction_crossover = start_best_fitness-fitness_for_reduction_crossover     # отметка уменьшения скрещивания
+        best_fitness = start_best_fitness
+        # print(fitness_for_reduction_crossover, start_best_fitness, poin_fitness_reduction_crossover)
+        while best_fitness >= 1:
+            self.progress.emit(int((1-int(best_fitness)/int(start_best_fitness))*100))
             for ind1 in range(1, len(population)):    # скрещивание
                 if random.random() < P_CROSSOVER:
                     # ind1, ind2 = random.sample(range(len(population)), 2)
                     ind2 = ind1-1
                     new_individ_1, new_individ_2 = generation.cxOrder(ind1=population[ind1].timeTable, ind2=population[ind2].timeTable)
-                    individ = Individual(new_individ_1, generation.TimeTable_Fitness(new_individ_1))
+                    individ = Individual(new_individ_1, generation.TimeTable_Fitness(new_individ_1), info='Скрещивание')
                     population.append(individ)
-                    individ = Individual(new_individ_2, generation.TimeTable_Fitness(new_individ_2))
+                    individ = Individual(new_individ_2, generation.TimeTable_Fitness(new_individ_2), info='Скрещивание')
                     population.append(individ)
 
             for i in range(len(population)):    # мутация
                 if random.random() < P_MUTATION:
                     mutation_individ = generation.mutationTimeTable(population[i].timeTable)
-                    individ = Individual(mutation_individ, generation.TimeTable_Fitness(mutation_individ))
+                    individ = Individual(mutation_individ, generation.TimeTable_Fitness(mutation_individ), info='Мутация')
                     population.append(individ)
 
-            index_min = min(range(len(population)), key=lambda i: population[i].fitness)
-            min_individ = population[index_min]
-            best_fitness = min_individ.fitness
-            population.pop(index_min)
+            best_fitness, info = generation.save_best_individ(population=population, k=3) # сохранение лучшего индивида
             population = generation.tournament_selection(population=population, k=k,  num_parents=POPULATION_SIZE)  # отбор
-            population.append(min_individ)  # сохранение лучшего индивида
-            count+= 1
+            count += 1
+
+            if best_fitness < poin_fitness_reduction_crossover: # постепенно уменьшаем скрещивание, а мутацию увеличиваем тк под конец скрещивание не эффективно
+                P_CROSSOVER -= 0.01
+                P_MUTATION += 0.01
+                # if P_CROSSOVER == 0 or P_MUTATION == 1 or P_MUTATION == 0.6:
+                # print(round(P_MUTATION, 3), round(P_CROSSOVER, 3), round(best_fitness, 3), t.end())
+                poin_fitness_reduction_crossover -= fitness_for_reduction_crossover
+            # pass
+            # if best_fitness <= 100 and P_CROSSOVER == 0.4:
+            #     P_CROSSOVER = 0
+            #     P_MUTATION = 0.6
             # if t.end() >= 31:
             #     index_min = min(range(len(population)), key=lambda i: population[i].fitness)
             #     min_individ = population[index_min]
             #     best_fitness = min_individ.fitness
-            print('#', count, best_fitness, t.end())
-        print(t.end(), count)
-        # hof = tools.HallOfFame(HALL_OF_FAME_SIZE)
-        #
-        # creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
-        # creator.create("Individual", list, fitness=creator.FitnessMin)
-        #
-        # toolbox = base.Toolbox()
-        # toolbox.register('random_timeTable', generation.random_timeTable)
-        # toolbox.register('populationCreator', tools.initRepeat, list, toolbox.random_timeTable)
-        #
-        # population = toolbox.populationCreator(n=POPULATION_SIZE)
-        #
-        # toolbox.register("evaluate", generation.TimeTable_Fitness)
-        # toolbox.register("select", tools.selTournament, tournsize = 3) # selAutomaticEpsilonLexicase,
-        # toolbox.register("mate", generation.cxOrder)
-        # toolbox.register("mutate", generation.mutationTimeTable, indpb = P_MUTATION)
-        #
-        # stats = tools.Statistics(lambda ind: ind.fitness.values)
-        # stats.register("min", np.min)
-        # stats.register("avg", np.mean)
-        # while 1:
-        #     # MAX_GENERATIONS = int(input())
-        #     t = Timer()
-        #     population, logbook = algorithms.eaSimple(population, toolbox,
-        #                                               cxpb=P_CROSSOVER,
-        #                                               mutpb=P_MUTATION,
-        #                                               ngen=MAX_GENERATIONS,
-        #                                               halloffame=hof,
-        #                                               stats=stats,
-        #                                               verbose=True)
-        #
-        #     # best = hof.items[0]
-        #     # print(best)
-        #
-        #     minFitnessValues, meanFitnessValues = logbook.select("min", "avg")
-        #     # print(minFitnessValues, meanFitnessValues)
-        #     plt.plot(minFitnessValues, color='red')
-        #     plt.plot(meanFitnessValues, color='green')
-        #     plt.xlabel('Поколение')
-        #     plt.ylabel('Мин/средняя приспособленность')
-        #     plt.title('Зависимость минимальной и средней приспособленности от поколения')
-        #     min_fitness = 100000
-        #     ind_min_fitness = 0
-        #     for i in range(len(population)):
-        #         fitness = generation.TimeTable_Fitness(population[i])[0]
-        #         if fitness < min_fitness:
-        #             min_fitness = fitness
-        #             ind_min_fitness = i
-        #     print(population[ind_min_fitness])
-        #     print(min_fitness)
-        #     print(t.end(), ' секунд\n', (meanFitnessValues[0] - meanFitnessValues[-1]) // t.end(), '- приспособленность в секунду')
-        #     print(meanFitnessValues[0],meanFitnessValues[-1])
-        #     print(meanFitnessValues[0]-meanFitnessValues[-1])
-        #     plt.show()
-        #     # if min_fitness == 0:
-        #     # generation.save_TimeTable_in_DB(population[ind_min_fitness])
-        #     # MAX_GENERATIONS = int(input())
-        #     # break
+            print('#', count, round(best_fitness, 3), t.end())
 
-ga = startGA()
+        print(t.end(), count)
+        index_min = min(range(len(population)), key=lambda i: population[i].fitness)
+        min_individ = population[index_min]
+        # generation.save_TimeTable_in_DB(min_individ.timeTable)
+        self.result.emit(generation.get_TimeTable_for_save(min_individ.timeTable))
+        # self.progress.emit(100)
+
+        #     middle_time += t.end()
+        #     l = sorted([round(ind.fitness, 3) for ind in population])
+        #     # print(l)
+        #     middle_combined_lesson += l[0]
+        # print(middle_time/n, 'ср. время', middle_combined_lesson/n, ' - ср. кол-во совмещенных пар')
+
+
+# ga = startGA()
 
 # 30000, 0.15
 # [[2, 0, 5, 0, 8, 5, 13, 13, 0, 7, 9, 8, 7, 5, 2, 9, 0, 0, 12, 9, 0, 8, 8, 2, 9, 5, 0, 0, 0, 2, 5, 8, 0, 0, 4, 8, 0, 8, 12, 7, 0, 6, 8, 4, 0, 0, 12, 5], [0, 0, 3, 14, 0, 10, 1, 1, 14, 13, 1, 14, 0, 0, 7, 10, 0, 9, 10, 1, 7, 1, 14, 12, 14, 12, 0, 0, 0, 0, 0, 0, 3, 14, 0, 0, 0, 6, 14, 2, 5, 14, 5, 12, 12, 14, 3, 10], [6, 3, 0, 0, 0, 10, 14, 9, 0, 14, 0, 9, 10, 8, 8, 2, 14, 13, 4, 8, 11, 13, 5, 5, 0, 0, 14, 5, 14, 9, 7, 12, 0, 0, 11, 14, 0, 0, 7, 4, 14, 8, 12, 14, 7, 12, 5, 9], [8, 8, 8, 3, 11, 0, 0, 7, 0, 8, 14, 14, 0, 0, 14, 6, 3, 14, 8, 14, 14, 14, 0, 0, 0, 6, 3, 3, 0, 11, 8, 7, 14, 0, 14, 0, 0, 0, 8, 14, 3, 3, 14, 8, 8, 0, 0, 14], [0, 0, 6, 13, 6, 2, 0, 0, 0, 3, 6, 6, 1, 2, 11, 8, 0, 0, 2, 6, 8, 6, 2, 8, 0, 0, 0, 0, 6, 13, 3, 1, 6, 13, 3, 11, 0, 13, 3, 13, 0, 11, 3, 1, 3, 8, 8, 0], [5, 5, 0, 6, 0, 12, 6, 5, 0, 0, 0, 0, 13, 12, 0, 0, 0, 6, 6, 12, 0, 0, 0, 0, 0, 0, 12, 6, 12, 5, 0, 0, 11, 6, 13, 12, 5, 12, 9, 12, 0, 0, 4, 10, 10, 0, 0, 6], [14, 14, 14, 11, 14, 14, 5, 14, 11, 5, 14, 11, 14, 14, 5, 14, 11, 5, 14, 11, 0, 5, 11, 14, 11, 14, 5, 14, 0, 14, 14, 14, 0, 0, 5, 6, 14, 5, 5, 5, 0, 5, 10, 5, 14, 11, 14, 13], [10, 10, 11, 9, 3, 0, 11, 0, 0, 0, 10, 1, 0, 0, 11, 5, 6, 11, 0, 5, 0, 0, 6, 6, 3, 13, 11, 10, 11, 6, 0, 0, 0, 2, 7, 5, 0, 14, 13, 11, 0, 0, 14, 7, 4, 7, 11, 2], [0, 6, 13, 5, 4, 0, 0, 10, 0, 10, 5, 12, 0, 11, 4, 13, 5, 2, 0, 0, 0, 11, 4, 11, 0, 11, 7, 0, 0, 0, 11, 5, 0, 11, 0, 2, 11, 11, 10, 0, 11, 0, 6, 0, 0, 9, 6, 0]]
@@ -975,3 +733,222 @@ ga = startGA()
 
 # 0.7 0.1 0.01
 # пуляция 150 за 1200
+
+
+# сохранение 3 лучших
+# с постепенным уменьшением скрещивания, 0.2 - мутация, 0.4 - скрещивание
+# 50 - ср. 278.6 сек
+#  182.11 3031
+#  180.93 3073
+#  215.48 3673
+#  452.5 7707
+#  364.73 5577
+
+# 70 - ср. 236 сек
+#  249.41 3471
+#  240.85 3385
+#  193.37 2717
+#  164.15 2371
+#  334.11 4949
+
+# 90 - ср. 221.6 сек
+#  253.03 3896
+#  182.5 2855
+#  285.11 4419
+#  256.46 3964
+#  132.24 2012
+
+# 110 - ср. 210.4 сек
+#  164.05 2530
+#  177.89 2769
+#  243.08 3686
+#  190.34 2711
+#  278.27 3990
+
+# 110
+# 52 148.6 2443
+# 52 226.37 3779
+# 52 257.96 4180
+# 52 189.47 3129
+# 52 380.76 6412
+# 240.632 ср. время 0.1252  - ср. кол-во совмещенных пар
+
+# 130
+# 52 425.28 7044
+# 52 170.19 2820
+# 52 136.31 2299
+# 52 221.41 3591
+# 52 149.07 2436
+# 220.452 ср. время 0.12940000000000002  - ср. кол-во совмещенных пар
+
+# 150
+# 52 159.81 2632
+# 52 380.71 6365
+# 52 158.51 2469
+# 52 171.57 2863
+# 52 151.22 2624
+# 204.36399999999998 ср. время 0.1286  - ср. кол-во совмещенных пар
+
+# 170
+# 52 202.92 3541
+# 52 198.98 2976
+# 52 275.55 4332
+# 52 341.3 5008
+# 52 633.54 9321
+# 330.45799999999997 ср. время 0.11979999999999999  - ср. кол-во совмещенных пар
+
+
+
+# 70
+# 289.9 4362
+# 310.55 4740
+# 166.63 2626
+# 222.04 3592
+# 405.45 6511
+# 1118.93 17892
+# 1001.61 15931
+# 281.11 4484
+# 230.64 3655
+# 282.13 4680
+# 861.798//2 ср. время 0.238  - ср. кол-во совмещенных пар
+# 90
+# 109.43 2027
+# 1334.53 25072
+# 205.63 3858
+# 253.77 3983
+# 136.14 2535
+# 157.6 2606
+# 286.82 4874
+# 419.84 7213
+# 229.4 3912
+# 382.41 6597
+# 703.114//2 ср. время 0.2544  - ср. кол-во совмещенных пар
+# 110
+# 157.84 2727
+# 319.53 5645
+# 175.74 3281
+# 102.8 1902
+# 280.1 5252
+# 237.12 4447
+# 129.05 2403
+# 227.05 4260
+# 181.68 3397
+# 196.83 3689
+# 401.548//2 ср. время 0.26180000000000003  - ср. кол-во совмещенных пар
+
+
+# 70
+# 473.74 8687
+# 371.38 6890
+# 157.54 2905
+# 632.7 11763
+# 1333.11 24813
+# 198.04 3658
+# 191.36 3536
+# 347.57 6455
+# 247.45 4581
+# 683.9 12724
+# 463.679 ср. время 0.11840000000000002  - ср. кол-во совмещенных пар
+# 90
+# 134.36 2477
+# 153.72 2837
+# 296.63 5500
+# 321.03 5944
+# 174.73 3226
+# 1422.3 26487
+# 151.83 2798
+# 141.22 2599
+# 485.31 9006
+# 202.07 3723
+# 348.32 ср. время 0.1251  - ср. кол-во совмещенных пар
+# 110
+# 545.91 10138
+# 186.57 3440
+# 416.49 7731
+# 222.46 4101
+# 103.7 1902
+# 161.75 2983
+# 214.6 3966
+# 673.81 12520
+# 776.87 14446
+# 194.53 3589
+# 349.669 ср. время 0.12010000000000001  - ср. кол-во совмещенных пар
+# 130
+# 766.15 14259
+# 148.19 2729
+# 179.94 3314
+# 241.07 4460
+# 320.53 5935
+# 667.96 12403
+# 527.8 9792
+# 119.48 2193
+# 387.58 7186
+# 251.49 4656
+# 361.01900000000006 ср. время 0.12050000000000001  - ср. кол-во совмещенных пар
+# 150
+# 188.28 3474
+# 284.54 5265
+# 665.39 12351
+# 234.63 4294
+# 369.25 6837
+# 1206.2 22409
+# 135.04 2483
+# 193.23 3560
+# 136.8 2513
+# 147.47 2716
+# 356.08299999999997 ср. время 0.1257  - ср. кол-во совмещенных пар
+
+
+# 100
+# 109.85 3241
+# 124.3 3617
+# 191.6 5864
+# 204.26 5856
+# 140.86 3600
+# 141.81 3158
+# 1791.14 40263
+# 937.81 22291
+# 299.98 7844
+# 174.38 4827
+# 411.599 ср. время 0.12159999999999997  - ср. кол-во совмещенных пар
+
+# 100   (ошибка была в постепенном уменьшении)
+# 124.45 3646
+# 89.42 2562
+# 71.27 2038
+# 129.71 3794
+# 225.82 6703
+# 128.13400000000001 ср. время 0.133  - ср. кол-во совмещенных пар
+
+
+# 50
+# 389.69 9379
+# 255.24 6835
+# 496.17 13076
+# 1182.29 32111
+# 433.21 11935
+# 70
+# 125.16 3279
+# 164.18 4076
+# 110.2 2658
+# 219.59 5779
+# 162.87 4250
+# 90
+# 309.65 8371
+# 293.48 8111
+# 798.91 21040
+# 217.25 5540
+# 85.13 2168
+# 110
+# 298.78 7734
+# 839.37 20922
+# 113.35 2642
+# 899.42 24413
+# 180.96 4517
+# 130
+
+# 61566 0.088 2826.24
+# 2826.24 61566
+
+# 18108 0.099 772.37
+# 772.37 18108

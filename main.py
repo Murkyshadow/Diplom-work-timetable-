@@ -8,6 +8,7 @@ from PyQt5 import uic
 from PyQt5 import QtCore
 from PyQt5 import QtGui
 from PyQt5 import QtWidgets
+from PyQt5.QtCore import QTimer
 from PyQt5.QtCore import pyqtSlot
 from PyQt5.QtGui import QBrush
 from PyQt5.QtGui import QFont, QPalette, QColor
@@ -26,83 +27,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QAbstractItemView
 import random
 from copy import deepcopy
-
-# from PyQt5.QtCore import Qt
-# q = QSqlQuery("select * FROM Teacher", con)
-# modelForComboBox.setQuery(q)
-# modelForComboBox.select()
-
-# tableDel.setCellWidget(y, 0, btnDel)    # для TableWidget
-# tableData.setIndexWidget(model.index(y, model.columnCount()-1), btnDel)
-
-# model.index(row, column).data()
-
-# new check-able combo box
-
-# class CheckableComboBox3(QComboBox):
-#
-#     # constructor
-#     def __init__(self, parent=None):
-#         super(CheckableComboBox, self).__init__(parent)
-#         self.view().pressed.connect(self.handleItemPressed)
-#         self.setModel(QStandardItemModel(self))
-#
-#
-#     count = 0
-#
-#     # action called when item get checked
-#     def do_action(self):
-#         print(self.count, 'action')
-#         # window.label.setText("Checked number : " + str(self.count))
-#
-#     # when any item get pressed
-#     def handleItemPressed(self, index):
-#         print('handle', index)
-#         # getting the item
-#         item = self.model().itemFromIndex(index)
-#
-#         # checking if item is checked
-#         if item.checkState() == Qt.Checked:
-#
-#             # making it unchecked
-#             item.setCheckState(Qt.Unchecked)
-#
-#         # if not checked
-#         else:
-#             # making the item checked
-#             item.setCheckState(Qt.Checked)
-#
-#             self.count += 1
-#
-#             # call the action
-#             self.do_action()
-#
-# class CheckableComboBox2(QtWidgets.QComboBox):
-#     # once there is a checkState set, it is rendered
-#     # here we assume default Unchecked
-#     def addItem(self, text):
-#         super(CheckableComboBox, self).addItem(text)
-#         print(QtCore.Qt.ItemFlag)
-#         item = self.model().item(self.count()-1,0)
-#         item.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsUserCheckable)
-#         item.setCheckState(QtCore.Qt.Unchecked)
-#         self.view().pressed.connect(self.action)
-#
-#     def action(self, index):
-#         item = self.model().itemFromIndex(index)
-#         if item.checkState() == QtCore.Qt.Checked:
-#             item.setCheckState(QtCore.Qt.Unchecked)
-#             print('uncheck ', end='')
-#         else:
-#             print('check ', end='')
-#             item.setCheckState(QtCore.Qt.Checked)
-#         print('нажато', index)
-#
-#     def itemChecked(self, index):
-#         print('12')
-#         item = self.model().item(i,0)
-#         return item.checkState() == QtCore.Qt.Checked
-
+from genAlgorithm import GA
 from PyQt5.QtWidgets import (QApplication, QWidget, QHBoxLayout,
                              QLineEdit, QListView, QToolButton)
 from PyQt5.QtCore import Qt, QAbstractListModel, pyqtSignal, pyqtSlot, QPoint
@@ -329,6 +254,26 @@ class DataBase():
         self.con.commit()
         cur.close()
 
+    def get_num_lesson_teacher(self):
+        """чтобы проверить сможет ли учитель вести столько пар в неделю"""
+        cur = self.con.cursor()
+        cur.execute(f"""SELECT Teacher.fullName, Teacher.id, GroupLesson.groupTitle, Lesson.hour FROM GroupLesson, Lesson, Teacher WHERE Teacher.id = Lesson.teacherId and GroupLesson.lessonId = Lesson.id GROUP BY Lesson.id""")
+        teacher_num_lesson = {}
+        group_week, error = self.get_group_week()
+        for fullName, teacher_id, group, hour in cur.fetchall():
+            if (fullName,teacher_id) not in teacher_num_lesson:
+                teacher_num_lesson[(fullName,teacher_id)] = 0
+            teacher_num_lesson[(fullName,teacher_id)] += hour // group_week[group]
+            if fullName == 'Тоболина Т.А.':
+                print(teacher_id, hour, group, group_week[group])
+        for teacher, num_lesson in teacher_num_lesson.items():
+            fullName, teacher_id = teacher
+            teacher_num_work_lesson = sum(map(lambda x: x.count(True), self.getTeacherTimeWork(teacher_id))) * 2     # кол-во рабочих пар у учителя за 2 недели
+            if num_lesson > teacher_num_work_lesson:
+                error.append(f'У учителя {fullName} слишком много пар - {num_lesson} из {teacher_num_work_lesson} возможных')
+        return error
+
+
     def getTeacher(self):
         cur = self.con.cursor()
         cur.execute("""SELECT fullName, id FROM Teacher""")
@@ -423,31 +368,34 @@ class DataBase():
             data[day][numLesson][group].append(teacher)
         return data
 
-    def get_group_teacher_lesson(self):
-        """{group:teacher:[[lessonID, quantityLessonForTwoWeek], ...]}"""
-        cur = self.con.cursor()
-        cur.execute("""SELECT DISTINCT GroupLesson.groupTitle, Lesson.teacherId, GroupLesson.lessonId, Lesson.hour FROM GroupLesson, Lesson WHERE GroupLesson.lessonId = Lesson.id""")
-        query = cur.fetchall()
-        data = {}
-        group_hours = self.get_hours_group()
-        for group, teacher, lesson, hour in query:
-            if group not in data.keys():
-                data[group] = {}
-                group_hours[group] //= 36   # получаем кол-во учебных недель
-            if teacher not in data[group].keys():
-                data[group][teacher] = []
-            data[group][teacher].append([lesson, hour//group_hours[group]])
-        return data, group_hours
+    # def get_group_teacher_lesson(self):
+    #     """{group:teacher:[[lessonID, quantityLessonForTwoWeek], ...]}"""
+    #     cur = self.con.cursor()
+    #     cur.execute("""SELECT DISTINCT GroupLesson.groupTitle, Lesson.teacherId, GroupLesson.lessonId, Lesson.hour FROM GroupLesson, Lesson WHERE GroupLesson.lessonId = Lesson.id""")
+    #     query = cur.fetchall()
+    #     data = {}
+    #     group_hours = self.get_hours_group()
+    #     for group, teacher, lesson, hour in query:
+    #         if group not in data.keys():
+    #             data[group] = {}
+    #             group_hours[group] //= 36   # получаем кол-во учебных недель
+    #         if teacher not in data[group].keys():
+    #             data[group][teacher] = []
+    #         data[group][teacher].append([lesson, hour//group_hours[group]])
+    #     return data, group_hours
 
-    def get_hours_group(self):
-        """общее кол-во часов для группы за семестр"""
+    def get_group_week(self):
+        """кол-во недель для группы за семестр"""
         cur = self.con.cursor()
         cur.execute("""SELECT GroupLesson.groupTitle, SUM(Lesson.hour) FROM GroupLesson, Lesson WHERE Lesson.id = GroupLesson.lessonId GROUP BY GroupLesson.groupTitle""")
-        group_hours = {}
+        group_week = {}
+        error = []
         for group, hours in cur.fetchall():
-            group_hours[group] = hours
+            if hours%36 != 0:
+                error.append(f'У группы {group} указано неверно кол-во часов - {hours}')
+            group_week[group] = hours//36
         cur.close()
-        return group_hours
+        return group_week, error
 
     def getAllTeacherTimeWork(self):
         """получение всех возможных дней работы учителей"""
@@ -461,22 +409,57 @@ class DataBase():
         cur.close()
         return teacherID_TimeWork
 
+    # def get_group_lesson_before(self):
+    #     cur = self.con.cursor()
+    #     cur.execute("""SELECT Lesson.hour, lessonId, groupTitle FROM GroupLesson, Lesson WHERE GroupLesson.lessonId = Lesson.id""")
+    #     number_free_lessons = 12
+    #     group_lesson = {}
+    #     group_hours = self.get_hours_group()
+    #     # print(group_hours)
+    #     for hour, lesson, group in cur.fetchall():
+    #         if group not in group_lesson.keys():
+    #             group_lesson[group] = [None]*number_free_lessons
+    #         group_lesson[group] += [lesson]*(hour//(group_hours[group]//36))
+    #         # print([lesson]*(hour//(group_hours[group]//36)))
+    #         # print(lesson, hour//(group_hours[group]//36), hour, group, group_hours[group])
+    #     return group_lesson
+
     def get_group_lesson(self):
+        """для GA"""
         cur = self.con.cursor()
-        cur.execute("""SELECT Lesson.hour, lessonId, groupTitle FROM GroupLesson, Lesson WHERE GroupLesson.lessonId = Lesson.id""")
+        cur.execute("""SELECT Lesson.hour, lessonId, groupTitle FROM GroupLesson, Lesson WHERE GroupLesson.lessonId = Lesson.id ORDER BY groupTitle""")
         number_free_lessons = 12
-        group_lesson = {}
-        group_hours = self.get_hours_group()
-        # print(group_hours)
+        group_lesson = []
+        group_week, error = self.get_group_week()
+        index_lesson = []
+        index_group = []
+        group_before = None
         for hour, lesson, group in cur.fetchall():
-            if group not in group_lesson.keys():
-                group_lesson[group] = [None]*number_free_lessons
-            group_lesson[group] += [lesson]*(hour//(group_hours[group]//36))
+            if group_before != group:
+                group_before = group
+                i = 0 + number_free_lessons
+                group_lesson.append([i for i in range(number_free_lessons)])
+                index_group.append(group)
+                index_lesson.append([None] * number_free_lessons)
+            group_lesson[-1] += [i for i in range(i, i + hour // group_week[group])]
+            i += hour // group_week[group]
+            index_lesson[-1] += [lesson] * (hour // group_week[group])
             # print([lesson]*(hour//(group_hours[group]//36)))
             # print(lesson, hour//(group_hours[group]//36), hour, group, group_hours[group])
-        return group_lesson
+        return group_lesson, index_lesson, index_group
+
+    def get_lessonID_teacherID(self):
+        """для GA"""
+        cur = self.con.cursor()
+        cur.execute("""SELECT id, teacherId FROM Lesson""")
+        lessonID_teacherID = {}
+        for lessonID, teacherID in cur.fetchall():
+            lessonID_teacherID[lessonID] = teacherID
+        cur.close()
+        return lessonID_teacherID
 
     def insert_time_table(self, timeTable):
+        """после генерации расписания"""
         cur = self.con.cursor()
         cur.execute("""DELETE FROM GroupTimetable""")
         # weekNumber dayOfWeek lessonNumber lessonId
@@ -542,40 +525,26 @@ class DataBase():
         cur.close()
         return timeTableTeacher
 
+    def get_paried_lesson(self):
+        """для GA получаем спаренные занятия"""
+        cur = self.con.cursor()
+        data = cur.execute("""SELECT lessonId, GroupLesson.groupTitle FROM GroupLesson group by 1 having count(lessonId) > 1""")
+        pariedLesson_groups = {}
+        lessons_par = []
+        for lessonID, group in data:
+            lessons_par.append(lessonID)
 
-class table(QtWidgets.QWidget):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.layout = QtWidgets.QGridLayout()
+        for lessonID in lessons_par:
+            for group, in cur.execute(f"""SELECT groupTitle FROM GroupLesson WHERE lessonId = {lessonID}""").fetchall():
+                if not lessonID in pariedLesson_groups:
+                    pariedLesson_groups[lessonID] = {}
+                pariedLesson_groups[lessonID][group] = []
 
-        self.setLayout(self.layout)
-
-        self.tableData = QtWidgets.QTableView()
-        self.layout.addWidget(self.tableData)
-
-        con = QSqlDatabase.addDatabase("QSQLITE")
-        con.setDatabaseName('Timetable.db')
-        con.open()
-
-        model = QSqlTableModel()
-        model.setTable('Teacher')
-        model.select()
-        self.tableData.setModel(model)
-
-        self.tableData.setTextElideMode(Qt.ElideNone)
-        self.tableData.horizontalHeader().setStretchLastSection(True)
-        self.tableData.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        self.tableData.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        self.tableData.setSortingEnabled(True)
-        # model.dataChanged.connect(self.changeTable)
-        # self.tableData.horizontalHeader().setStretchLastSection(True)
-        # self.tableData.resizeColumnToContents(0)
-
+        return pariedLesson_groups
 
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
-
         self.DB = DataBase()
         self.ui = PyQt5.uic.loadUi("main.ui", self)
         setStyle(self.ui)
@@ -598,21 +567,29 @@ class MainWindow(QMainWindow):
         # QtWidgets.QTabWidget.addTab()
         # GenerateTimeTable(self.DB)
         # GeneticGenerationTimeTable(self.DB)
-        self.ui.btn_generate_TimeTable.clicked.connect(self.generate_TimeTable)
         menuBar = self.ui.menuBar()
-        fileMenu = QMenu("&Файл", self)
-        menuBar.addMenu(fileMenu)
+        self.fileMenu = QMenu("&Файл", self)
+        menuBar.addMenu(self.fileMenu)
         self.actionOpen = QAction("Загрузить данные из excel", self)
         self.actionSave = QAction("Сохранить расписание в excel", self)
-        fileMenu.addAction(self.actionOpen)
-        fileMenu.addAction(self.actionSave)
+        self.fileMenu.addAction(self.actionOpen)
+        self.fileMenu.addAction(self.actionSave)
         self.actionOpen.triggered.connect(self.importData)
         self.actionSave.triggered.connect(self.exportTimeTable)
         self.setWindowTitle('Расписание')
         # QPushButton.style()
         self.ui.btn_next_TimeTable.hide()
-
-
+        self.ui.progressBar.hide()
+        self.ui.lcdNumber.hide()
+        self.ui.btn_generate_TimeTable.clicked.connect(self.generate_TimeTable)
+        # print(set([1,2,3])-set([2,3,4]))
+        # print('er')
+        # print(self.DB.get_paried_lesson())
+        # self.time = 100
+        # self.timer = QTimer(self)
+        # self.timer.timeout.connect(self.showTime)
+        # self.timer.setInterval(10)  # 1 sec
+        # self.showTime()
     # def any(self):
     #     from openpyxl import Workbook
     #     # workbook = load_workbook('C:\\Users\\aleks\\OneDrive\\Рабочий стол\\test123.xlsx')
@@ -628,14 +605,65 @@ class MainWindow(QMainWindow):
 
     def generate_TimeTable(self):
         print('create timetable')
+        errors = self.DB.get_num_lesson_teacher()
+        if errors != []:
+            msg = QMessageBox.warning(
+                self,
+                "Success!",
+                '\n'.join(errors)
+            )
+            # msg = QMessageBox.Information(
+            #     self,
+            #     "Suc!",
+            #     '\n'.join(errors)
+            # )
+            return
+
+        self.btn_generate_TimeTable.setEnabled(False)
+        self.tabWidget.setEnabled(False)
+        self.fileMenu.setEnabled(False)
+        self.ui.progressBar.show()
+        self.ui.lcdNumber.show()
+        self.ui.progressBar.setEnabled(True)
+        self.ui.lcdNumber.setEnabled(True)
+        self.ui.lcdNumber.setNumDigits(8)
+
+        self.time = Timer()
+        self.timer = QTimer(self)
+        self.timer.setInterval(1000)  # 1 sec
+        self.timer.timeout.connect(self.showTime)
+        self.timer.start()
+
+        self.generate_TT = GA(self.DB.get_group_lesson(), self.DB.getAllTeacherTimeWork(), self.DB.get_lessonID_teacherID(), self.DB.get_paried_lesson())
+        self.generate_TT.progress.connect(lambda x: self.setStatusProgressBar(x))
+        self.generate_TT.result.connect(lambda TT: self.end_GA(TT))
+        self.generate_TT.start()
+
+    def end_GA(self, TimeTable_for_save):
+        self.DB.insert_time_table(TimeTable_for_save)
+        time_table = TimeTable(self.DB, self.ui)
+        time_table.load_TimeTable()
+        self.setStatusProgressBar(100)
+        self.timer.stop()
+        self.btn_generate_TimeTable.setEnabled(True)
+        self.tabWidget.setEnabled(True)
+        self.fileMenu.setEnabled(True)
+
+    def showTime(self):
+        sec = int(self.time.end())%60
+        if sec < 10:
+            sec = '0' + str(sec)
+        else:
+            sec = str(sec)
+        self.ui.lcdNumber.display(str(int((self.time.end()) // 60)) + ':' + sec)
+
+    def setStatusProgressBar(self, progress):
+        self.ui.progressBar.setValue(progress)
 
     def update_Tables(self):
         self.teacherTable.setTableData()
-        # self.teacherTable.setWidgets(True)
         self.groupTable.setTableData()
-        # self.groupTable.setWidgets(True)
         self.lessonTable.setTableData()
-        # self.groupTable.setWidgets(True)
 
     def exportTimeTable(self):
         from openpyxl import Workbook
@@ -703,6 +731,7 @@ class MainWindow(QMainWindow):
         win = ParsingXLSX(self.DB, parent=self)
         win.setWindowTitle('Импорт')
         win.exec()
+
 
 class ParsingXLSX(QDialog):
     def __init__(self, DB, parent = None):
@@ -1134,9 +1163,9 @@ class VerticalTextDelegate(QStyledItemDelegate):
 
         painter.restore()
 
-    def sizeHint(self, option, index):
-        val = QtGui.QSize(self.sizeHint(option, index))
-        return QtGui.QSize(val.height(), val.width())
+    # def sizeHint(self, option, index):
+    #     val = QtGui.QSize(self.sizeHint(option, index))
+    #     return QtGui.QSize(val.height(), val.width())
 
 
 class TimeTable(QWidget):
@@ -1168,9 +1197,10 @@ class TimeTable(QWidget):
         # delegate = AlignDelegate(self.table)
         # self.table.setItemDelegateForColumn(0, delegate)
 
-        print(['1','1','2','2','3','3','4','4']*6)
+        # print(['1','1','2','2','3','3','4','4']*6)
         self.table.setVerticalHeaderLabels(['1','1','2','2','3','3','4','4']*6)
         # self.table.setSpan(0, 0, 8, 1)
+        # QTableWidgetItem(lesson).data()
         days = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота']
         for num_day, day in enumerate(days):
             self.table.setSpan(num_day*8, 0, 8, 1)
@@ -1186,13 +1216,23 @@ class TimeTable(QWidget):
                         for num_lesson in TimeTable[groups[num_group]][week][day]:
                             lessonID = TimeTable[groups[num_group]][week][day][num_lesson]
                             lesson, teacher, audienceNumber = LessonID_teacher[lessonID]
+                            data_for_cell = lesson + '\n' + teacher
                             try:
-                                if week == 1 and self.table.item(day*2*4 + num_lesson*2, num_group+shift_group).text() == lesson:   # пары верхней и нижней недели совпадают
+                                if week == 1 and self.table.item(day*2*4 + num_lesson*2, num_group+shift_group).text() == data_for_cell:   # пары верхней и нижней недели совпадают
                                     self.table.setSpan(day*2*4 + num_lesson*2, num_group+shift_group, 2, 1)
                                 else:
-                                    self.table.setItem(day*2*4 + num_lesson*2 + week, num_group+shift_group, QTableWidgetItem(lesson))
+                                    self.table.setItem(day*2*4 + num_lesson*2 + week, num_group+shift_group, QTableWidgetItem(data_for_cell))
                             except Exception:
-                                self.table.setItem(day*2*4 + num_lesson*2 + week, num_group+shift_group, QTableWidgetItem(lesson))
+                                self.table.setItem(day*2*4 + num_lesson*2 + week, num_group+shift_group, QTableWidgetItem(data_for_cell))
+
+        for col in range(shift_group, self.table.columnCount()):
+            for row in range(0, self.table.rowCount(), 2):
+                if (self.table.item(row, col) == None and self.table.item(row+1, col) == None) or (self.table.item(row, col) != None and self.table.item(row+1, col) != None and self.table.item(row,col).text() == self.table.item(row+1,col).text()):
+                    self.table.setSpan(row, col, 2, 1)
+
+        # self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
 
 
 class WorkingTime(QDialog):
@@ -1302,15 +1342,14 @@ class WorkingTime(QDialog):
     def insert_data_in_table(self):
         """Вставляем расписание учителя"""
         teacherTimeWork = self.DB.getTeacherTimeWorkLesson(self.id_teacher)
-        print(teacherTimeWork)
+        # print(teacherTimeWork)
         for week in teacherTimeWork:
             for day in teacherTimeWork[week]:
                 for num_lesson in teacherTimeWork[week][day]:
                     lesson, groups = teacherTimeWork[week][day][num_lesson]
                     data_for_set = lesson+'\n'+', '.join(groups)
-                    row = num_lesson+week
+                    row = num_lesson*2+week
                     col = day
-                    # self.table.model.item(row, col).
                     self.table.item(row, col).setText(data_for_set)
         # если одинаковые ячейки, то оъединяем их
         for col in range(self.table.columnCount()):
@@ -1345,11 +1384,14 @@ def setStyle(ui, extraStyle='', selectCell=True):
         }"""
     ui.setStyleSheet(style+extraStyle)
 
+
 class test():
     def __init__(self, num):
         self.num = num
 
+
 if __name__ == '__main__':
+    print(round(0.11, 3))
     # values = [test(333), test(2), test(0), test(100)]
     # print(values.__getitem__(-1))
     # print(max(range(len(values)), key = lambda i: values[i].num))
@@ -1362,7 +1404,7 @@ if __name__ == '__main__':
     # random.shuffle(day)
     # a[num_day*4:num_day*8] = day
     # print(a)
-
+    # print([1,3,2].sort())
     app = QtWidgets.QApplication([])
     f = open('style_gray.qss')
     style = f.read()
