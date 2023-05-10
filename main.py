@@ -254,7 +254,7 @@ class DataBase():
         self.con.commit()
         cur.close()
 
-    def get_num_lesson_teacher(self):
+    def get_error(self):
         """чтобы проверить сможет ли учитель вести столько пар в неделю"""
         cur = self.con.cursor()
         cur.execute(f"""SELECT Teacher.fullName, Teacher.id, GroupLesson.groupTitle, Lesson.hour FROM GroupLesson, Lesson, Teacher WHERE Teacher.id = Lesson.teacherId and GroupLesson.lessonId = Lesson.id GROUP BY Lesson.id""")
@@ -268,11 +268,10 @@ class DataBase():
                 print(teacher_id, hour, group, group_week[group])
         for teacher, num_lesson in teacher_num_lesson.items():
             fullName, teacher_id = teacher
-            teacher_num_work_lesson = sum(map(lambda x: x.count(True), self.getTeacherTimeWork(teacher_id))) * 2     # кол-во рабочих пар у учителя за 2 недели
+            teacher_num_work_lesson = sum(map(lambda x: x.count(-1), self.getTeacherTimeWork(teacher_id))) * 2     # кол-во рабочих пар у учителя за 2 недели
             if num_lesson > teacher_num_work_lesson:
                 error.append(f'У учителя {fullName} слишком много пар - {num_lesson} из {teacher_num_work_lesson} возможных')
         return error
-
 
     def getTeacher(self):
         cur = self.con.cursor()
@@ -336,7 +335,7 @@ class DataBase():
         timeWork = [[False, False, False, False] for _ in range(6)]
         cur.execute(f"""SELECT dayOfWeek, lessonNumber FROM TeacherAttendance WHERE teacherId = {id_teacher}""")
         for day, lesson in cur.fetchall():
-            timeWork[day][lesson] = True
+            timeWork[day][lesson] = -1
         return timeWork
 
     def add_work_day(self, day, les, id):
@@ -352,21 +351,21 @@ class DataBase():
         self.con.commit()
         cur.close()
 
-    def get_teachers_for_group_in_day(self):
-        """для генерации расписания {day:{numLesson:{group:[teachers]}}}"""
-        cur = self.con.cursor()
-        cur.execute("""SELECT DISTINCT TeacherAttendance.dayOfWeek, TeacherAttendance.lessonNumber, GroupLesson.groupTitle, TeacherAttendance.teacherId
-                        FROM GroupLesson, Lesson, TeacherAttendance WHERE TeacherAttendance.teacherId = Lesson.teacherId and GroupLesson.lessonId = Lesson.id""")
-        data = {}
-        for day, numLesson, group, teacher in cur.fetchall():
-            if day not in data.keys():
-                data[day] = {}
-            if numLesson not in data[day].keys():
-                data[day][numLesson] = {}
-            if group not in data[day][numLesson].keys():
-                data[day][numLesson][group] = []
-            data[day][numLesson][group].append(teacher)
-        return data
+    # def get_teachers_for_group_in_day(self):
+    #     """для генерации расписания {day:{numLesson:{group:[teachers]}}}"""
+    #     cur = self.con.cursor()
+    #     cur.execute("""SELECT DISTINCT TeacherAttendance.dayOfWeek, TeacherAttendance.lessonNumber, GroupLesson.groupTitle, TeacherAttendance.teacherId
+    #                     FROM GroupLesson, Lesson, TeacherAttendance WHERE TeacherAttendance.teacherId = Lesson.teacherId and GroupLesson.lessonId = Lesson.id""")
+    #     data = {}
+    #     for day, numLesson, group, teacher in cur.fetchall():
+    #         if day not in data.keys():
+    #             data[day] = {}
+    #         if numLesson not in data[day].keys():
+    #             data[day][numLesson] = {}
+    #         if group not in data[day][numLesson].keys():
+    #             data[day][numLesson][group] = []
+    #         data[day][numLesson][group].append(teacher)
+    #     return data
 
     # def get_group_teacher_lesson(self):
     #     """{group:teacher:[[lessonID, quantityLessonForTwoWeek], ...]}"""
@@ -402,6 +401,9 @@ class DataBase():
         cur = self.con.cursor()
         cur.execute("""SELECT id FROM Teacher""")
         teacherID_TimeWork = {}
+        # TW_teacher = self.getTeacherTimeWork(id)
+        # for
+
         for id in cur.fetchall():
             id = id[0]
             teacherID_TimeWork[id] = [self.getTeacherTimeWork(id), self.getTeacherTimeWork(id)]
@@ -429,24 +431,30 @@ class DataBase():
         cur = self.con.cursor()
         cur.execute("""SELECT Lesson.hour, lessonId, groupTitle FROM GroupLesson, Lesson WHERE GroupLesson.lessonId = Lesson.id ORDER BY groupTitle""")
         number_free_lessons = 12
-        group_lesson = []
         group_week, error = self.get_group_week()
-        index_lesson = []
-        index_group = []
-        group_before = None
+        lessonsID = {}
+        # group_lesson = []
+        # index_group = []
+        # group_before = None
+        # index_lesson = []
+        # for hour, lesson, group in cur.fetchall():
+        #     if group_before != group:
+        #         group_before = group
+        #         i = 0 + number_free_lessons
+        #         group_lesson.append([i for i in range(number_free_lessons)])
+        #         index_group.append(group)
+        #         index_lesson[group].append([None] * number_free_lessons)
+        #     group_lesson[-1] += [i for i in range(i, i + hour // group_week[group])]
+        #     i += hour // group_week[group]
+        #     index_lesson[-1] += [lesson] * (hour // group_week[group])
+        #     # print([lesson]*(hour//(group_hours[group]//36)))
+        #     # print(lesson, hour//(group_hours[group]//36), hour, group, group_hours[group])
+        # return group_lesson, lessonsID, index_group
         for hour, lesson, group in cur.fetchall():
-            if group_before != group:
-                group_before = group
-                i = 0 + number_free_lessons
-                group_lesson.append([i for i in range(number_free_lessons)])
-                index_group.append(group)
-                index_lesson.append([None] * number_free_lessons)
-            group_lesson[-1] += [i for i in range(i, i + hour // group_week[group])]
-            i += hour // group_week[group]
-            index_lesson[-1] += [lesson] * (hour // group_week[group])
-            # print([lesson]*(hour//(group_hours[group]//36)))
-            # print(lesson, hour//(group_hours[group]//36), hour, group, group_hours[group])
-        return group_lesson, index_lesson, index_group
+            if group not in lessonsID:
+                lessonsID[group] = [None] * number_free_lessons
+            lessonsID[group] += [lesson] * (hour // group_week[group])
+        return lessonsID
 
     def get_lessonID_teacherID(self):
         """для GA"""
@@ -528,19 +536,20 @@ class DataBase():
     def get_paried_lesson(self):
         """для GA получаем спаренные занятия"""
         cur = self.con.cursor()
-        data = cur.execute("""SELECT lessonId, GroupLesson.groupTitle FROM GroupLesson group by 1 having count(lessonId) > 1""")
+        data = cur.execute("""SELECT lessonId, GroupLesson.groupTitle, Lesson.hour FROM GroupLesson, Lesson WHERE Lesson.id = lessonId group by 1 having count(lessonId) > 1 """)
         pariedLesson_groups = {}
-        lessons_par = []
-        for lessonID, group in data:
-            lessons_par.append(lessonID)
+        lessons_par = {}
+        group_week, error = self.get_group_week()
+        for lessonID, group, hour in data:
+            lessons_par[lessonID] = {'всего занятий':hour//group_week[group]}
+        return lessons_par
+        # for lessonID in lessons_par:
+        #     for group, in cur.execute(f"""SELECT groupTitle FROM GroupLesson WHERE lessonId = {lessonID}""").fetchall():
+        #         if not lessonID in pariedLesson_groups:
+        #             pariedLesson_groups[lessonID] = {}
+        #         pariedLesson_groups[lessonID][group] = []
 
-        for lessonID in lessons_par:
-            for group, in cur.execute(f"""SELECT groupTitle FROM GroupLesson WHERE lessonId = {lessonID}""").fetchall():
-                if not lessonID in pariedLesson_groups:
-                    pariedLesson_groups[lessonID] = {}
-                pariedLesson_groups[lessonID][group] = []
-
-        return pariedLesson_groups
+        # return pariedLesson_groups
 
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -605,7 +614,7 @@ class MainWindow(QMainWindow):
 
     def generate_TimeTable(self):
         print('create timetable')
-        errors = self.DB.get_num_lesson_teacher()
+        errors = self.DB.get_error()
         if errors != []:
             msg = QMessageBox.warning(
                 self,
@@ -641,13 +650,13 @@ class MainWindow(QMainWindow):
 
     def end_GA(self, TimeTable_for_save):
         self.DB.insert_time_table(TimeTable_for_save)
-        time_table = TimeTable(self.DB, self.ui)
-        time_table.load_TimeTable()
         self.setStatusProgressBar(100)
         self.timer.stop()
+        time_table = TimeTable(self.DB, self.ui)
+        time_table.load_TimeTable()
         self.btn_generate_TimeTable.setEnabled(True)
-        self.tabWidget.setEnabled(True)
         self.fileMenu.setEnabled(True)
+        self.tabWidget.setEnabled(True)
 
     def showTime(self):
         sec = int(self.time.end())%60
@@ -1186,6 +1195,7 @@ class TimeTable(QWidget):
 
         numrows = 6*8
         numcols = len(groups)+1  # 3 columns in your example
+        self.table.clear()
         self.table.setColumnCount(numcols)
         self.table.setRowCount(numrows)
         self.table.setHorizontalHeaderLabels(['День']+groups)
@@ -1208,8 +1218,8 @@ class TimeTable(QWidget):
             item.setTextAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignHCenter)
             self.table.setItem(num_day*8, 0, item)
 
+        shift_group = 1
         if TimeTable != {}:
-            shift_group = 1
             for num_group in range(len(groups)):
                 for week in TimeTable[groups[num_group]]:
                     for day in TimeTable[groups[num_group]][week]:
@@ -1321,7 +1331,7 @@ class WorkingTime(QDialog):
     def click_work_time(self, row, column):
         attendance = self.attendance
         day, lesson = column, row // 2
-        attendance[day][lesson] ^= True
+        attendance[day][lesson] = -1 if attendance[day][lesson] != -1 else 0
 
         if attendance[day][lesson]:  # работает --> зеленый
             self.DB.add_work_day(day, lesson, self.id_teacher)    # добавляем в бд
