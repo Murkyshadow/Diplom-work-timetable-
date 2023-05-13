@@ -407,7 +407,6 @@ class DataBase():
         for id in cur.fetchall():
             id = id[0]
             teacherID_TimeWork[id] = [self.getTeacherTimeWork(id), self.getTeacherTimeWork(id)]
-
         cur.close()
         return teacherID_TimeWork
 
@@ -537,18 +536,16 @@ class DataBase():
         """для GA получаем спаренные занятия"""
         cur = self.con.cursor()
         data = cur.execute("""SELECT lessonId, GroupLesson.groupTitle, Lesson.hour FROM GroupLesson, Lesson WHERE Lesson.id = lessonId group by 1 having count(lessonId) > 1 """)
-        pariedLesson_groups = {}
+        # pariedLesson_groups = {}
         lessons_par = {}
         group_week, error = self.get_group_week()
         for lessonID, group, hour in data:
-            lessons_par[lessonID] = {'всего занятий':hour//group_week[group]}
+            lessons_par[lessonID] = {'всего занятий':hour//group_week[group], 'группы':[]}
+        # return lessons_par
+        for lessonID in lessons_par:
+            for group, in cur.execute(f"""SELECT groupTitle FROM GroupLesson WHERE lessonId = {lessonID}""").fetchall():
+                lessons_par[lessonID]['группы'].append(group)
         return lessons_par
-        # for lessonID in lessons_par:
-        #     for group, in cur.execute(f"""SELECT groupTitle FROM GroupLesson WHERE lessonId = {lessonID}""").fetchall():
-        #         if not lessonID in pariedLesson_groups:
-        #             pariedLesson_groups[lessonID] = {}
-        #         pariedLesson_groups[lessonID][group] = []
-
         # return pariedLesson_groups
 
 class MainWindow(QMainWindow):
@@ -621,11 +618,6 @@ class MainWindow(QMainWindow):
                 "Success!",
                 '\n'.join(errors)
             )
-            # msg = QMessageBox.Information(
-            #     self,
-            #     "Suc!",
-            #     '\n'.join(errors)
-            # )
             return
 
         self.btn_generate_TimeTable.setEnabled(False)
@@ -652,11 +644,30 @@ class MainWindow(QMainWindow):
         self.DB.insert_time_table(TimeTable_for_save)
         self.setStatusProgressBar(100)
         self.timer.stop()
-        time_table = TimeTable(self.DB, self.ui)
-        time_table.load_TimeTable()
         self.btn_generate_TimeTable.setEnabled(True)
         self.fileMenu.setEnabled(True)
         self.tabWidget.setEnabled(True)
+        table = self.ui.TimeTable
+        for row in range(48):
+            try:
+                print(row, table.item(row, 1).text().replace('\n', ' '), end='\t')
+            except Exception:
+                pass
+            try:
+                print(table.item(row, 2).text().replace('\n', ' '))
+            except Exception:
+                pass
+        time_table = TimeTable(self.DB, self.ui)
+        time_table.load_TimeTable()
+        for row in range(48):
+            try:
+                print(row, table.item(row, 1).text().replace('\n', ' '), end='\t')
+            except Exception:
+                pass
+            try:
+                print(table.item(row, 2).text().replace('\n', ' '))
+            except Exception:
+                pass
 
     def showTime(self):
         sec = int(self.time.end())%60
@@ -664,7 +675,7 @@ class MainWindow(QMainWindow):
             sec = '0' + str(sec)
         else:
             sec = str(sec)
-        self.ui.lcdNumber.display(str(int((self.time.end()) // 60)) + ':' + sec)
+        self.ui.lcdNumber.display(str(int(self.time.end()//60)) + ':' + sec)
 
     def setStatusProgressBar(self, progress):
         self.ui.progressBar.setValue(progress)
@@ -1186,6 +1197,7 @@ class TimeTable(QWidget):
         self.ui = ui
 
     def load_TimeTable(self):
+        print('load TT')
         TimeTable = self.DB.getTimeTable()
         print(TimeTable)
         groups = self.DB.getTitleGroup()
@@ -1196,6 +1208,8 @@ class TimeTable(QWidget):
         numrows = 6*8
         numcols = len(groups)+1  # 3 columns in your example
         self.table.clear()
+        self.table.setColumnCount(0)
+        self.table.setRowCount(0)
         self.table.setColumnCount(numcols)
         self.table.setRowCount(numrows)
         self.table.setHorizontalHeaderLabels(['День']+groups)
@@ -1228,10 +1242,10 @@ class TimeTable(QWidget):
                             lesson, teacher, audienceNumber = LessonID_teacher[lessonID]
                             data_for_cell = lesson + '\n' + teacher
                             try:
-                                if week == 1 and self.table.item(day*2*4 + num_lesson*2, num_group+shift_group).text() == data_for_cell:   # пары верхней и нижней недели совпадают
-                                    self.table.setSpan(day*2*4 + num_lesson*2, num_group+shift_group, 2, 1)
-                                else:
-                                    self.table.setItem(day*2*4 + num_lesson*2 + week, num_group+shift_group, QTableWidgetItem(data_for_cell))
+                                # if week == 1 and self.table.item(day*2*4 + num_lesson*2, num_group+shift_group).text() == data_for_cell:   # пары верхней и нижней недели совпадают
+                                #     self.table.setSpan(day*2*4 + num_lesson*2, num_group+shift_group, 2, 1)
+                                # else:
+                                self.table.setItem(day*2*4 + num_lesson*2 + week, num_group+shift_group, QTableWidgetItem(data_for_cell))
                             except Exception:
                                 self.table.setItem(day*2*4 + num_lesson*2 + week, num_group+shift_group, QTableWidgetItem(data_for_cell))
 
@@ -1293,6 +1307,14 @@ class WorkingTime(QDialog):
         self.current_hover = [0, 0]
         self.table.cellEntered.connect(self.cellHover)
         self.table.setSelectionMode(False)
+        # self.table.clear()  # убирает содержимое ячеек, но объединенные оставляет
+        # self.table.setColumnCount(0)
+        # self.table.setRowCount(0)
+        # self.table.setColumnCount(6)
+        # self.table.setRowCount(8)
+        # for row in range(8):
+        #     for col in range(6):
+        #         print(self.table.item(row, col))
 
     def cellHover(self, row, column):   # при наведении
         old_item = self.table.item(self.current_hover[0], self.current_hover[1])
@@ -1401,6 +1423,15 @@ class test():
 
 
 if __name__ == '__main__':
+    tt = {'ИСП11-23': {0: {0: {1: 11, 3: 14}, 1: {1: 14, 2: 11}, 2: {0: 14, 1: 14, 2: 14}, 3: {0: 11, 1: 11, 2: 14, 3: 14}, 4: {0: 14, 1: 14, 2: 11}, 5: {0: 11, 1: 11, 2: 11, 3: 11}}, 1: {0: {0: 11, 3: 11}, 1: {0: 14, 1: 11, 2: 11, 3: 11}, 2: {0: 11, 1: 11, 2: 11, 3: 11}, 3: {1: 14, 2: 14}, 4: {1: 14, 2: 14}, 5: {1: 14, 2: 11, 3: 11}}}, 'ИСП12-23': {0: {0: {3: 14, 0: 12, 1: 12, 2: 12}, 1: {1: 14, 0: 12}, 2: {0: 14, 1: 14, 2: 14}, 3: {2: 12, 3: 14, 0: 12, 1: 12}, 4: {0: 14, 1: 14, 2: 12}, 5: {0: 12, 1: 12}}, 1: {1: {0: 14, 1: 12}, 3: {1: 14, 2: 12, 0: 12}, 4: {1: 14, 2: 14, 0: 12, 3: 12}, 0: {0: 12, 1: 12, 2: 12}, 2: {0: 12, 1: 12}, 5: {1: 14, 2: 12, 3: 12}}}}
+    new_tt = {}
+    for group in tt:
+        new_tt[group] = [None]*48
+        for week in tt[group]:
+            for day in tt[group][week]:
+                for num_les in tt[group][week][day]:
+                    new_tt[group][day*4 + week*24 + num_les] = tt[group][week][day][num_les]
+    print(new_tt)
     print(round(0.11, 3))
     # values = [test(333), test(2), test(0), test(100)]
     # print(values.__getitem__(-1))

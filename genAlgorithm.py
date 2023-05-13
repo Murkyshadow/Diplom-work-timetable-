@@ -13,6 +13,9 @@ from deap import tools
 import random
 import matplotlib.pyplot as plt
 import numpy as np
+import logging
+logging.basicConfig(level=logging.INFO)
+
 
 class Timer():
     def __init__(self):  # таймер
@@ -25,31 +28,14 @@ class GeneticGenerationTimeTable():
     def __init__(self, group_lessons, AllTeacherTimeWork, lessonID_teacherID, parLesson_group):
         """запросы к бд + 1 поколение"""
         # self.DB = DB
-        # self.group_lesson, self.index_lesson, self.index_group = group_lesson  # id_lesson - по индексу обращаемся к уроку
-        self.group_lessons = group_lessons
+        self.group_lessons = group_lessons  # все уроки для каждой группы - {группа:[уроки]}
         self.teacherID_TimeWork = AllTeacherTimeWork  # {teacherID:[{day:{numLesson:True|False}}, day:{numLesson:True|False}}]} - 2 недели
-        self.parLesson_group = parLesson_group
-        # self.group_lesson = [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]]
-        # self.index_lesson = [[None, 1, 3], [None, 2, 4]]
-        # self.teacherID_TimeWork = {1: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 2: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]]}
-        # self.lesson_teacherID = {1: 1, 2: 1, 3: 1, 4: 1}
-
-        # более полные данные
-        # self.group_lesson = [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 3, 4, 4, 4, 5, 5, 5, 6, 7, 7, 8, 8, 8, 8, 8, 8, 9, 9, 9, 10, 10, 10, 11, 11, 12, 12, 12, 13, 13, 13, 14, 14], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 5, 5, 6, 6, 7, 7, 7, 8, 8, 9, 10, 10, 10, 11, 12, 12, 12, 13, 13, 13, 14, 14, 14, 14, 14, 14], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 3, 4, 4, 4, 5, 5, 5, 6, 7, 7, 8, 8, 9, 9, 9, 10, 10, 11, 11, 11, 12, 12, 12, 13, 13, 13, 14, 14, 14, 14, 14, 14], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 5, 5, 6, 6, 6, 7, 7, 8, 8, 8, 9, 9, 10, 11, 11, 11, 12, 13, 13, 13, 14, 14, 14, 14, 14, 14], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 5, 5, 6, 6, 6, 6, 6, 6, 7, 7, 7, 8, 8, 8, 9, 9, 10, 11, 11, 11, 12, 13, 13, 13, 14, 14], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 4, 4, 5, 5, 5, 6, 6, 6, 7, 7, 7, 8, 8, 9, 10, 10, 10, 11, 12, 12, 12, 12, 12, 12, 13, 13, 14, 14, 14], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 3, 3, 3, 4, 5, 5, 5, 6, 7, 8, 9, 9, 10, 10, 10, 11, 11, 11, 11, 11, 11, 12, 12, 13, 14, 14, 14, 14, 14, 15, 16, 16], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 3, 3, 3, 4, 5, 5, 5, 6, 6, 6, 7, 7, 7, 8, 9, 9, 10, 10, 10, 11, 11, 11, 11, 11, 11, 12, 12, 12, 13, 13, 14, 14], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6, 7, 7, 7, 8, 9, 9, 10, 10, 10, 11, 11, 11, 11, 11, 11, 12, 12, 13, 13, 13, 14, 14]]
-        # self.index_lesson = [None, 7, 8, 9, 24, 38, 52, 53, 67, 81, 91, 92, 112, 115, 124, None, 22, 29, 34, 44, 45, 72, 77, 86, 98, 99, 100, 110, 113, 117, None, 4, 5, 6, 31, 36, 48, 49, 74, 79, 88, 111, 114, 119, 121, None, 11, 30, 35, 46, 47, 62, 73, 78, 87, 101, 102, 103, 118, 120, None, 16, 26, 40, 56, 57, 69, 83, 94, 95, 107, 108, 109, 116, 126, None, 23, 37, 50, 51, 63, 80, 89, 90, 104, 105, 106, 122, 123, 127, None, 17, 18, 19, 20, 27, 41, 58, 59, 60, 65, 70, 75, 84, 96, 97, 128, None, 12, 13, 14, 15, 25, 32, 39, 54, 55, 64, 68, 82, 93, 125, None, 1, 2, 3, 10, 21, 28, 33, 42, 43, 61, 66, 71, 76, 85]
-        # self.teacherID_TimeWork = {1: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 2: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 3: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 4: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 5: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 6: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 7: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 8: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 9: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 10: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 11: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 12: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 13: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 14: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 15: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 16: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 17: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 18: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]], 19: [[[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]], [[True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True], [True, True, True, True]]]}
-        # self.lesson_teacherID = {1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1, 9: 1, 10: 2, 11: 2, 12: 2, 13: 2, 14: 2, 15: 2, 16: 2, 17: 2, 18: 2, 19: 2, 20: 2, 21: 3, 22: 3, 23: 3, 24: 3, 25: 3, 26: 3, 27: 3, 28: 4, 29: 4, 30: 4, 31: 4, 32: 4, 33: 5, 34: 5, 35: 5, 36: 5, 37: 5, 38: 5, 39: 5, 40: 5, 41: 5, 42: 6, 43: 6, 44: 6, 45: 6, 46: 6, 47: 6, 48: 6, 49: 6, 50: 6, 51: 6, 52: 6, 53: 6, 54: 6, 55: 6, 56: 6, 57: 6, 58: 6, 59: 6, 60: 6, 61: 7, 62: 7, 63: 7, 64: 7, 65: 7, 66: 8, 67: 8, 68: 8, 69: 8, 70: 8, 71: 9, 72: 9, 73: 9, 74: 9, 75: 9, 76: 10, 77: 10, 78: 10, 79: 10, 80: 10, 81: 10, 82: 10, 83: 10, 84: 10, 85: 11, 86: 11, 87: 11, 88: 11, 89: 11, 90: 11, 91: 11, 92: 11, 93: 11, 94: 11, 95: 11, 96: 11, 97: 11, 98: 12, 99: 12, 100: 12, 101: 12, 102: 12, 103: 12, 104: 12, 105: 12, 106: 12, 107: 12, 108: 12, 109: 12, 110: 13, 111: 13, 112: 13, 113: 14, 114: 14, 115: 14, 116: 14, 117: 15, 118: 16, 119: 16, 120: 17, 121: 17, 122: 17, 123: 17, 124: 17, 125: 17, 126: 17, 127: 18, 128: 19}
-        # self.index_group = None # пока не надо
-        self.lesson_teacherID = lessonID_teacherID
-        print(self.group_lessons)
-        # print(self.index_lesson)
-        # print(self.group_lesson)
-        # print(self.index_group)
+        self.parLesson_group = parLesson_group      # все спаренные уроки {урок:{всего занятий:100}}
+        self.lesson_teacherID = lessonID_teacherID  # {урок:учитель}
+        # print(self.group_lessons)
+        print(self.teacherID_TimeWork)
         print(parLesson_group)
-        print(lessonID_teacherID)
-        # print(self.lesson_teacherID)
-        # print(self.group_lesson, self.index_lesson, self.teacherID_TimeWork, self.lesson_teacherID, sep='\n')
-
+        # print(lessonID_teacherID)
 
     def random_timeTable(self):
         """первое поколение"""
@@ -79,35 +65,32 @@ class GeneticGenerationTimeTable():
                             count_lesson_day += 1    # кол-во пар в день
                             if not teacherID_TimeWork[self.lesson_teacherID[lesson]][week][day][num_lesson%4]:    # если у учителя нет этой пары (методичсеский дни)
                                 fitness += 10
-                                # print('методическое расписание учителя')
+                                logging.log(logging.INFO, "методический день нарушен")
                             elif teacherID_TimeWork[self.lesson_teacherID[lesson]][week][day][num_lesson%4] == -1:  # отмечаем, что пара
                                 teacherID_TimeWork[self.lesson_teacherID[lesson]][week][day][num_lesson%4] = lesson
-                            elif not (teacherID_TimeWork[self.lesson_teacherID[lesson]][week][day][num_lesson%4] == lesson and lesson in parLesson):   # уже есть пара у учителя
+                            else:   # уже есть пара у учителя
+                                # not (teacherID_TimeWork[self.lesson_teacherID[lesson]][week][day][num_lesson % 4] == lesson and lesson in parLesson)
                                 fitness += 50
-                                # print('уже есть пара')
-                            if lesson in parLesson: # спаренная пара должна быть
-                                parLesson[lesson][num_lesson] = True
-                            # if week == 1 and individual[group][num_lesson] != individual[group][num_lesson-24]:
-                            #     fitness += 0.001
-
+                                logging.log(logging.INFO, "уже есть пара")
+                            # if lesson in parLesson: # спаренная пара должна быть
+                            #     parLesson[lesson][num_lesson] = True
+                            if week == 1 and individual[group][num_lesson] != individual[group][num_lesson-24]:
+                                fitness += 0.001
                         elif count_lesson_day >= 1 and windowsGroup == False:     # нет пары (окно)
                             windowsGroup = True
                     if windowsGroup == 2:
                         fitness += 20
-                        # print('окно у группы', group, day)
+                        logging.log(logging.INFO, "окно у группы"+group+str(day))
                     if count_lesson_day <= 1:
                         fitness += 50 * (count_lesson_day+1)
                     count_lesson_week += count_lesson_day
                 fitness += 5 * abs(18-count_lesson_week) # должно быть 18 пар в неделю
 
-        for lesson in parLesson:    # спаренные пары
-            fitness += 50 * (len(parLesson[lesson]) - parLesson[lesson]['всего занятий'] - 1)
-
-        # проверяем разницу для спаренных пар
-        # for lessonID in parLesson:
-        #     groups = list(parLesson[lessonID].keys())
-        #     for i in range(1, len(parLesson[lessonID])):
-        #         fitness += len(set(parLesson[lessonID][groups[i]]) - set(parLesson[lessonID][groups[i-1]])) * 20
+        # for lesson in parLesson:    # спаренные пары
+        #     discrete_les = len(parLesson[lesson]) - parLesson[lesson]['всего занятий'] - 2
+        #     if discrete_les < 0:
+        #         print('err')
+        #     fitness += 50 * (discrete_les)
 
         for id in teacherID_TimeWork:
             for week in range(2):
@@ -124,10 +107,10 @@ class GeneticGenerationTimeTable():
                             windowsTeacher = True
                     if windowsTeacher == 2: # без окон
                         fitness += 5
-                        # print('window teacher')
+                        logging.log(logging.INFO, "window teacher")
                     if count_lesson_day == 1:   # минимум 2 пары в день
                         fitness += 10
-                        # print('менее 3 пар у учителя')
+                        logging.log(logging.INFO, "менее 3 пар у учителя")
 
         return fitness
 
@@ -167,14 +150,19 @@ class GeneticGenerationTimeTable():
                         # #     individual[numGroup][num_day * 4:(num_day+1)*4] = day_lesson
                         # else:   # меняем 2 пары местами
                         week = random.randint(0,1)
-                        random_week = random.randint(0,1)
-                        random_num_lesson = random.randint(0, 23)
+                        random_week = random.randint(0,0)
+                        random_num_lesson = random.randint(0, 47)
                         while individual[group][i] == individual[group][random_num_lesson]:
-                            random_num_lesson = random.randint(0, 23)
-                        if individual[group][i + week*24] == individual[group][i + (not week)*24] and random.random() < 0.8:
-                            individual[group][i + (not week) * 24], individual[group][random_num_lesson + (not random_week) * 24] = individual[group][random_num_lesson + (not random_week) * 24], individual[group][i + (not week) * 24]
+                            random_num_lesson = random.randint(0, 47)
+                        # if individual[group][i + week*24] == individual[group][i + (not week)*24]:  # если совпадает со второй неделей, то переносим вместе
+                        #     individual[group][i + (not week) * 24], individual[group][random_num_lesson + (not random_week) * 24] = individual[group][random_num_lesson + (not random_week) * 24], individual[group][i + (not week) * 24]
+                        # lesson = individual[group][i]
+                        # if lesson in self.parLesson_group:
+                        #     for group in self.parLesson_group[lesson]['группы']:
+                        #         if lesson == individual[group][i + week * 24]:  # спаренные пары меняем вместе
+                        #             individual[group][i + week * 24], individual[group][random_num_lesson + random_week * 24] = individual[group][random_num_lesson + random_week*24], individual[group][i + week*24]
+                        # else:
                         individual[group][i + week*24], individual[group][random_num_lesson + random_week*24] = individual[group][random_num_lesson + random_week*24], individual[group][i + week*24]
-
                         # for _ in range(random.randint(1,3)):
                         #     random_gen = random.randint(0, len(individual[numGroup])-1)
                         #     random_gen_2 = random.randint(0, len(individual[numGroup])-1)
@@ -192,33 +180,23 @@ class GeneticGenerationTimeTable():
         return TimeTable_for_save
 
     def tournament_selection(self, population, k, num_parents):
-        # population - список особей
-        # k - количество участников в турнире
-        # num_parents - количество родительских особей, которые нужно выбрать
-
-        # создаем пул доступных особей
+        """population - список особей
+        k - количество участников в турнире
+        num_parents - количество родительских особей, которые нужно выбрать"""
         available_parents = list(range(len(population)))
         selected_parents = []
         for i in range(num_parents):
-            # выбираем k участников для турнира и находим лучшую особь по заданному критерию
             best = min(random.sample(available_parents, k), key=lambda x: population[x].fitness)
-            # добавляем лучшую особь в список отобранных родительских особей
             selected_parents.append(population[best])
-            # удаляем особь из пула доступных особей
             available_parents.remove(best)
-            # если пул доступных особей пуст, перезаполняем его
-            # if not available_parents:
-            #     available_parents = list(range(len(population)))
-
         return selected_parents + self.best_individs
 
     def save_best_individ(self, population, k):
-        from math import inf
         self.best_individs = []
         if k <= 0:
             index_min = min(range(len(population)), key=lambda i: population[i].fitness)
             min_individ = population[index_min]
-            return min_individ.fitness, min_individ.info
+            return min_individ, min_individ.info
 
         self.best_individs = sorted(population[:k], key=lambda ind: ind.fitness)
         # best_fitness = inf
@@ -237,7 +215,7 @@ class GeneticGenerationTimeTable():
                     self.best_individs[i + 1].fitness, self.best_individs[i].fitness = self.best_individs[i].fitness, self.best_individs[i+1].fitness
 
         index_min = min(range(len(self.best_individs)), key=lambda i: self.best_individs[i].fitness)
-        return self.best_individs[index_min].fitness, self.best_individs[index_min].info
+        return self.best_individs[index_min], self.best_individs[index_min].info
 
 class Individual():
     def __init__(self, data, fitness, info):
@@ -265,16 +243,22 @@ class GA(QThread):
 
     def run(self):
         # константы генетического алгоритма
-        # print('start generate')
         generation = GeneticGenerationTimeTable(self.group_lesson, self.AllTeacherTimeWork, self.lessonID_teacherID, self.parLesson_group)
-        # print('fitness')
+        print('start generate')
+        print('fitness')
         # print(generation.TimeTable_Fitness({'ИСП11-23': [7, 5, 7, 7, None, 5, 5, 7, None, 5, 7, 7, None, None, 5, 7, None, 5, 5, None, 7, 7, 7, 7, 7, 5, 7, 5, None, 5, 5, None, 7, 5, None, None, 7, 7, 5, 5, None, None, 5, 5, 7, 5, 7, 5], 'ИСП12-23': [None, 8, 5, 5, 8, 8, 8, 5, 5, 8, None, None, None, 8, 8, 5, 8, 5, 8, 5, None, None, 5, 5, None, 8, 5, 8, None, 5, 8, 5, 5, 8, None, None, None, 5, 8, 8, 8, 5, 5, 5, None, 8, 5, 8]}))
         # print(generation.TimeTable_Fitness({'ИСП11-23': [5, 5, None, None, None, 5, 5, 5, None, 5, 5, 5, None, 5, 5, 5, 5, 5, 5, None, 5, 5, 5, 5, 5, 5, 5, None, 5, 5, 5, 5, 5, 5, None, None, None, None, 5, 5, 5, 5, 5, 5, None, 5, 5, 5], 'ИСП12-23': [5, 5, 5, 5, 5, 5, None, None, None, None, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, None, None, None, 5, 5, 5, None, None, 5, 5, None, 5, 5, 5, 5, 5, 5, 5, None, 5, 5, None, 5, 5, 5, 5]}))
         # print(generation.TimeTable_Fitness({'ИСП11-23': [5,5,5,None]*12, 'ИСП12-23': [5,5,5,None]*12}))
         # print(generation.TimeTable_Fitness({'ИСП11-23': [5, 5, 5, None, 5, None, None, 5, 5, 5, 5, None, 5, 5, 5, None, 5, 5, 5, 5, None, 5, 5, 5, None, None, 5, 5, None, 5, 5, 5, None, 5, 5, 5, None, 5, 5, 5, 5, 5, 5, None, 5, 5, 5, 5], 'ИСП12-23': [None, None, 5, 5, 5, 5, 5, None, 5, 5, 5, 5, 5, 5, 5, None, 5, 5, 5, None, None, 5, 5, None, None, None, 5, 5, None, 5, 5, 5, 5, 5, 5, 5, None, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, None]}))
+        print(generation.TimeTable_Fitness({'ДТ 11-22': [91, 92, 92, None, None, 38, 8, 91, 67, 7, 24, None, None, 115, 115, None, 53, 67, 124, None, 38, 81, 67, 9, 67, 81, 24, None, 81, 8, 124, 91, None, 52, 24, None, 67, 53, 38, None, 112, 67, 8, None, 112, 115, 112, None], 'ИСП 11-22': [77, 77, None, None, None, 72, 117, 117, 117, 117, 44, None, None, 86, 45, 110, None, 98, 99, 29, 113, 72, 22, 34, 113, 110, 86, 29, None, 22, 99, None, 117, 117, 29, 45, None, 100, 77, 34, 22, 110, 99, None, None, 34, 113, None], 'ИСП 12-22': [119, 119, 36, 114, None, 4, 88, None, 119, 48, 5, 79, None, None, 111, 49, 121, 74, 31, None, None, 31, 74, 49, 88, 114, 111, None, None, 79, 6, None, None, 31, 121, 121, None, 79, 121, 121, 5, 5, 36, None, 121, 111, 36, 114], 'ИСП 13-22': [102, 102, 30, 11, None, None, 35, 11, 120, 118, None, None, 47, 120, 78, 35, None, 87, 87, 101, None, 120, 35, 120, 78, 73, 30, 62, 62, 62, 47, 11, 30, 102, None, None, 120, 120, 103, None, 46, 118, 118, None, 73, 78, None, None], 'КИП 11-22': [69, 16, 116, None, None, 108, 69, None, None, 108, 108, 126, 107, 109, 40, 69, 83, 40, 26, 94, None, 116, 16, None, None, 69, 116, 26, 57, 126, 69, None, None, 95, 83, None, 94, 69, 95, None, None, 16, 83, 94, 40, 57, 56, 26], 'Р11-22': [122, 37, 122, 37, 106, 127, 127, 127, None, 123, 90, 89, None, 80, 122, 122, 37, 123, None, None, None, 50, 122, None, None, None, 63, 80, None, 90, 89, 104, 105, 23, 51, None, 105, 89, 23, None, 80, 63, 63, 105, None, 122, 23, 51], 'С11-22': [20, 70, 18, None, 19, 70, 75, None, 27, 70, 65, None, 65, 58, 96, None, None, None, 70, 19, 84, 70, 60, 27, 41, 96, 18, 96, 19, 18, 17, None, None, None, 96, 97, 60, 27, 128, 128, None, 59, 70, 65, None, 75, 96, None], 'ТМ 11-22': [32, 125, None, None, None, 25, 55, 39, None, None, 125, 64, 82, 14, 14, 13, None, 32, 13, 25, 68, 15, 32, 68, None, 39, 39, 12, 93, 55, 25, 54, None, 64, 68, None, None, 14, 68, None, None, 82, 13, 68, 82, 93, 68, 64], 'Э 11-22': [None, 28, 66, 28, 21, 10, 10, 42, 43, 21, 76, None, None, 61, 66, None, None, 76, 71, 43, None, 33, 2, 28, None, None, 71, 33, 66, 66, None, None, 85, 76, 61, 66, None, 2, 1, 10, None, 21, 85, 33, 2, 3, 61, 66]}))
+
         # print('res st')
         # print(generation.TimeTable_Fitness({'ИСП11-23': [None, None, 5, 5, 5, 5, None, None, 5, 5, 5, 5, 5, 5, 5, 5, None, 5, 5, 5, None, 5, 5, 5, None, None, 5, 5, 5, 5, 5, 5, 5, 5, 5, None, None, 5, 5, 5, 5, 5, 5, None, 5, 5, 5, None], 'ИСП12-23': [None, None, 5, 5, 5, 5, None, None, 5, 5, 5, 5, 5, 5, 5, 5, None, 5, 5, 5, None, 5, 5, 5, None, None, 5, 5, 5, 5, 5, 5, 5, 5, 5, None, None, 5, 5, 5, 5, 5, 5, None, 5, 5, 5, None]}))
         # print('res')
+        # l = {'123':[1] * 12 + [0] * 12 + [1] * 12 + [0] * 12}
+        # for _ in range(100):
+        #     print(l:=generation.mutationTimeTable(l))
+        # print(generation.TimeTable_Fitness({'ИСП11-23': [None, 11, None, 14, None, 14, 11, None, 14, 14, 14, None, 11, 11, 14, 14, 14, 14, 11, None, 11, 11, 11, 11, 11, None, None, 11, 14, 11, 11, 11, 11, 11, 11, 11, None, 14, 14, None, None, 14, 14, None, None, 14, 11, 11], 'ИСП12-23': [12, 12, 12, 14, 12, 14, None, None, 14, 14, 14, None, 12, 12, 12, 14, 14, 14, 12, None, 12, 12, None, None, 12, 12, 12, None, 14, 12, None, None, 12, 12, None, None, 12, 14, 12, None, 12, 14, 14, 12, None, 14, 12, 12]}))
         POPULATION_SIZE = 60       # количество индивидуумов в поп
         P_CROSSOVER = 0.4         # вероятность скрещивания
         P_MUTATION = 0.2           # вероятность мутации индивидуума
@@ -282,18 +266,18 @@ class GA(QThread):
         # HALL_OF_FAME_SIZE = 1
         k = 3   # участников в турнире
         # for i in range(10):
-        population = [generation.random_timeTable() for _ in range(POPULATION_SIZE)]
-        count = 0
-        t = Timer()
-        start_best_fitness, info = generation.save_best_individ(population=population, k=0)  # сохранение лучшего индивида
-        fitness_for_reduction_crossover = start_best_fitness // (P_CROSSOVER*100)     # через определенную приспоcобленность уменьшать шанс скрещивания
-        poin_fitness_reduction_crossover = start_best_fitness-fitness_for_reduction_crossover     # отметка уменьшения скрещивания
-        best_fitness = start_best_fitness
-
+        # population = [generation.random_timeTable() for _ in range(POPULATION_SIZE)]
+        # count = 0
+        # t = Timer()
+        # start_best_fitness, info = generation.save_best_individ(population=population, k=0)  # сохранение лучшего индивида
+        # start_best_fitness = start_best_fitness.fitness
+        # fitness_for_reduction_crossover = start_best_fitness // (P_CROSSOVER*100)     # через определенную приспоcобленность уменьшать шанс скрещивания
+        # poin_fitness_reduction_crossover = start_best_fitness-fitness_for_reduction_crossover     # отметка уменьшения скрещивания
+        # best_fitness = start_best_fitness
         # print(list(map(lambda x: x.timeTable, population)))
         # print(fitness_for_reduction_crossover, start_best_fitness, poin_fitness_reduction_crossover)
 
-        while best_fitness >= 1:
+        while 0:
             self.progress.emit(int((1-int(best_fitness)/int(start_best_fitness))*100))
             for ind1 in range(1, len(population)):    # скрещивание
                 if random.random() < P_CROSSOVER:
@@ -310,7 +294,8 @@ class GA(QThread):
                     individ = Individual(mutation_individ, generation.TimeTable_Fitness(mutation_individ), info='Мутация')
                     population.append(individ)
 
-            best_fitness, info = generation.save_best_individ(population=population, k=3) # сохранение лучшего индивида
+            ind, info = generation.save_best_individ(population=population, k=3) # сохранение лучшего индивида
+            best_fitness = ind.fitness
             population = generation.tournament_selection(population=population, k=k,  num_parents=POPULATION_SIZE)  # отбор
             count += 1
 
@@ -320,15 +305,8 @@ class GA(QThread):
                 # if P_CROSSOVER == 0 or P_MUTATION == 1 or P_MUTATION == 0.6:
                 # print(round(P_MUTATION, 3), round(P_CROSSOVER, 3), round(best_fitness, 3), t.end())
                 poin_fitness_reduction_crossover -= fitness_for_reduction_crossover
-            # pass
-            # if best_fitness <= 100 and P_CROSSOVER == 0.4:
-            #     P_CROSSOVER = 0
-            #     P_MUTATION = 0.6
-            # if t.end() >= 31:
-            #     index_min = min(range(len(population)), key=lambda i: population[i].fitness)
-            #     min_individ = population[index_min]
-            #     best_fitness = min_individ.fitness
             print('#', count, round(best_fitness, 3), t.end())
+            print(ind.timeTable)
 
         print('#', count, round(best_fitness, 3), t.end())
         index_min = min(range(len(population)), key=lambda i: population[i].fitness)
@@ -980,3 +958,6 @@ class GA(QThread):
 
 # 18108 0.099 772.37
 # 772.37 18108
+
+# 613173 5.105 28782.53
+
