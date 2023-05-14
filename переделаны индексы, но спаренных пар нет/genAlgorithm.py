@@ -13,9 +13,6 @@ from deap import tools
 import random
 import matplotlib.pyplot as plt
 import numpy as np
-import logging
-logging.basicConfig(level=logging.INFO)
-
 
 class Timer():
     def __init__(self):  # таймер
@@ -25,31 +22,28 @@ class Timer():
         return float("%.2f" % (time.time() - self.st))
 
 class GeneticGenerationTimeTable():
-    def __init__(self, group_lessons, AllTeacherTimeWork, lessonID_teacherID, parLesson_group):
+    def __init__(self, group_lesson, AllTeacherTimeWork, lessonID_teacherID, parLesson_group):
         """запросы к бд + 1 поколение"""
+        # QLineEdit.
         # self.DB = DB
-        self.group_lessons = group_lessons  # все уроки для каждой группы - {группа:[уроки]}
+        self.group_lesson = group_lesson  # все пары группы за 2 недели
         self.teacherID_TimeWork = AllTeacherTimeWork  # {teacherID:[{day:{numLesson:True|False}}, day:{numLesson:True|False}}]} - 2 недели
-        self.parLesson_group = parLesson_group      # все спаренные уроки {урок:{всего занятий:100}}
-        self.lesson_teacherID = lessonID_teacherID  # {урок:учитель}
-        # print(self.group_lessons)
-        print(self.teacherID_TimeWork)
-        print(parLesson_group)
-        # print(lessonID_teacherID)
+        self.parLesson_group = parLesson_group
+        self.lesson_teacherID = lessonID_teacherID
+        # print(self.lesson_teacherID)
+        # print(self.group_lesson, self.index_lesson, self.teacherID_TimeWork, self.lesson_teacherID, sep='\n')
 
     def random_timeTable(self):
         """первое поколение"""
-        TimeTable = deepcopy(self.group_lessons)
+        TimeTable = deepcopy(self.group_lesson)
         for group in TimeTable:
             random.shuffle(TimeTable[group])
         individ = Individual(TimeTable, self.TimeTable_Fitness(TimeTable), info = 'Первое поколение')
         return individ
 
     def TimeTable_Fitness(self, individual):
-        parLesson = deepcopy(self.parLesson_group)
-        teacherID_TimeWork = deepcopy(self.teacherID_TimeWork)
-        # print(parLesson)
         fitness = 0
+        teacherID_TimeWork = deepcopy(self.teacherID_TimeWork)
         for group in individual:
             for week in range(0, 2):
                 count_lesson_week = 0
@@ -57,61 +51,51 @@ class GeneticGenerationTimeTable():
                     windowsGroup = False
                     count_lesson_day = 0
                     for num_lesson in range(week*6*4 + day*4, week*6*4 + day*4 + 4):
-                        # lesson = self.index_lesson[num_group][individual[num_group][num_lesson]]
                         lesson = individual[group][num_lesson]
                         if lesson != None:
                             if windowsGroup:    # после (окна свободное время) значит это окно
                                 windowsGroup = 2
                             count_lesson_day += 1    # кол-во пар в день
-                            if not teacherID_TimeWork[self.lesson_teacherID[lesson]][week][day][num_lesson%4]:    # если у учителя нет этой пары (методичсеский дни)
+                            if not teacherID_TimeWork[self.lesson_teacherID[lesson]][week][day][num_lesson%4]:    # если у учителя нет этой пары (методические дни)
                                 fitness += 10
-                                logging.log(logging.INFO, "методический день нарушен")
-                            elif teacherID_TimeWork[self.lesson_teacherID[lesson]][week][day][num_lesson%4] == -1:  # отмечаем, что пара
-                                teacherID_TimeWork[self.lesson_teacherID[lesson]][week][day][num_lesson%4] = lesson
-                            else:   # уже есть пара у учителя
-                                # not (teacherID_TimeWork[self.lesson_teacherID[lesson]][week][day][num_lesson % 4] == lesson and lesson in parLesson)
+                                # print('методическое расписание учителя')
+                            elif teacherID_TimeWork[self.lesson_teacherID[lesson]][week][day][num_lesson%4] == True:  # отмечаем, что пара
+                                teacherID_TimeWork[self.lesson_teacherID[lesson]][week][day][num_lesson%4] = -1
+                            else:
                                 fitness += 50
-                                logging.log(logging.INFO, "уже есть пара")
-                            # if lesson in parLesson: # спаренная пара должна быть
-                            #     parLesson[lesson][num_lesson] = True
-                            if week == 1 and individual[group][num_lesson] != individual[group][num_lesson-24]:
+                                # print('уже есть пара')
+                            if week == 1 and lesson != individual[group][num_lesson-24]:
                                 fitness += 0.001
+
                         elif count_lesson_day >= 1 and windowsGroup == False:     # нет пары (окно)
                             windowsGroup = True
                     if windowsGroup == 2:
                         fitness += 20
-                        logging.log(logging.INFO, "окно у группы"+group+str(day))
+                        # print('окно у группы', self.index_group[num_group], day)
                     if count_lesson_day <= 1:
                         fitness += 50 * (count_lesson_day+1)
+                        # print('мало пар')
                     count_lesson_week += count_lesson_day
                 fitness += 5 * abs(18-count_lesson_week) # должно быть 18 пар в неделю
-
-        # for lesson in parLesson:    # спаренные пары
-        #     discrete_les = len(parLesson[lesson]) - parLesson[lesson]['всего занятий'] - 2
-        #     if discrete_les < 0:
-        #         print('err')
-        #     fitness += 50 * (discrete_les)
 
         for id in teacherID_TimeWork:
             for week in range(2):
                 for day in range(6):
                     count_lesson_day = 0
                     windowsTeacher = False
-                    for num_lesson in range(4):
+                    for num_lesson in teacherID_TimeWork[id][week][day]:
                         lesson = teacherID_TimeWork[id][week][day][num_lesson]
-                        if lesson != -1 and lesson:    # есть пара
+                        if lesson == -1:    # есть пара
                             count_lesson_day += 1
                             if windowsTeacher:  # после окна пара
                                 windowsTeacher = 2
-                        elif lesson == -1 and count_lesson_day >= 1 and windowsTeacher == False:     # нет пары (окно)
+
+                        elif lesson == True and count_lesson_day >= 1 and windowsTeacher == False:     # нет пары (окно)
                             windowsTeacher = True
                     if windowsTeacher == 2: # без окон
                         fitness += 5
-                        logging.log(logging.INFO, "window teacher")
                     if count_lesson_day == 1:   # минимум 2 пары в день
                         fitness += 10
-                        logging.log(logging.INFO, "менее 3 пар у учителя")
-
         return fitness
 
     def cxOrder(self, ind1, ind2):
@@ -120,11 +104,11 @@ class GeneticGenerationTimeTable():
         size = len(ind1)
         a, b = random.sample(range(size), 2)
         a, b = min([a, b]), max([a, b])
+        groups = list(ind1.keys())
         while a==0 and b==size:
             a, b = random.sample(range(size), 2)
             a, b = min([a, b]), max([a, b])
 
-        groups = list(ind1.keys())
         for num_group in range(a, b):
             ind1[groups[num_group]], ind2[groups[num_group]] = ind2[groups[num_group]], ind1[groups[num_group]]
         return ind1, ind2
@@ -135,9 +119,9 @@ class GeneticGenerationTimeTable():
         # for _ in range(random.randint(1, 1)):
         #     numGroup = random.randint(0, len(individual)-1)
             if random.random() < 0.3:  # вероятность в группе
-                for i in range(24):
+                for i in range(len(individual[group])):
                     # tools.mutShuffleIndexes(individual, indpb)
-                    if random.random() < 0.03:  # сила мутации в расписании групппы
+                    if random.random() < 0.015:  # сила мутации в расписании групппы
                         # type_mutation = random.sample([2], 1)
                         # num_day = i // 4
                         # if type_mutation == 0:  # меняем дни местами
@@ -149,20 +133,13 @@ class GeneticGenerationTimeTable():
                         # #     random.shuffle(day_lesson)
                         # #     individual[numGroup][num_day * 4:(num_day+1)*4] = day_lesson
                         # else:   # меняем 2 пары местами
-                        week = random.randint(0,1)
-                        random_week = random.randint(0,0)
-                        random_num_lesson = random.randint(0, 47)
-                        while individual[group][i] == individual[group][random_num_lesson]:
-                            random_num_lesson = random.randint(0, 47)
-                        # if individual[group][i + week*24] == individual[group][i + (not week)*24]:  # если совпадает со второй неделей, то переносим вместе
-                        #     individual[group][i + (not week) * 24], individual[group][random_num_lesson + (not random_week) * 24] = individual[group][random_num_lesson + (not random_week) * 24], individual[group][i + (not week) * 24]
-                        # lesson = individual[group][i]
-                        # if lesson in self.parLesson_group:
-                        #     for group in self.parLesson_group[lesson]['группы']:
-                        #         if lesson == individual[group][i + week * 24]:  # спаренные пары меняем вместе
-                        #             individual[group][i + week * 24], individual[group][random_num_lesson + random_week * 24] = individual[group][random_num_lesson + random_week*24], individual[group][i + week*24]
-                        # else:
-                        individual[group][i + week*24], individual[group][random_num_lesson + random_week*24] = individual[group][random_num_lesson + random_week*24], individual[group][i + week*24]
+                        random_gen = random.randint(0, len(individual[group])-1)
+                        while individual[group][i] == individual[group][random_gen]:
+                            random_gen = random.randint(0, len(individual[group]) - 1)
+                        # print(individual[group][i], individual[group][random_gen], i, random_gen)
+                        individual[group][i], individual[group][random_gen] = individual[group][random_gen], individual[group][i]
+                        # print(individual[group][i], individual[group][random_gen], i, random_gen)
+
                         # for _ in range(random.randint(1,3)):
                         #     random_gen = random.randint(0, len(individual[numGroup])-1)
                         #     random_gen_2 = random.randint(0, len(individual[numGroup])-1)
@@ -173,30 +150,38 @@ class GeneticGenerationTimeTable():
     def get_TimeTable_for_save(self, TimeTable):
         TimeTable_for_save = []
         for group in TimeTable:
-            lesson_group = TimeTable[group]
-            TimeTable_for_save.append([])
-            for lesson in lesson_group:
-                TimeTable_for_save[-1].append(lesson)
+            # TimeTable_for_save.append([])
+            # for lesson in group:
+            TimeTable_for_save.append(TimeTable[group])
         return TimeTable_for_save
 
     def tournament_selection(self, population, k, num_parents):
-        """population - список особей
-        k - количество участников в турнире
-        num_parents - количество родительских особей, которые нужно выбрать"""
+        # population - список особей
+        # k - количество участников в турнире
+        # num_parents - количество родительских особей, которые нужно выбрать
+
+        # создаем пул доступных особей
         available_parents = list(range(len(population)))
         selected_parents = []
         for i in range(num_parents):
+            # выбираем k участников для турнира и находим лучшую особь по заданному критерию
             best = min(random.sample(available_parents, k), key=lambda x: population[x].fitness)
+            # добавляем лучшую особь в список отобранных родительских особей
             selected_parents.append(population[best])
+            # удаляем особь из пула доступных особей
             available_parents.remove(best)
+            # если пул доступных особей пуст, перезаполняем его
+            # if not available_parents:
+            #     available_parents = list(range(len(population)))
+
         return selected_parents + self.best_individs
 
     def save_best_individ(self, population, k):
-        self.best_individs = []
+        from math import inf
         if k <= 0:
             index_min = min(range(len(population)), key=lambda i: population[i].fitness)
             min_individ = population[index_min]
-            return min_individ, min_individ.info
+            return min_individ.fitness, min_individ.info
 
         self.best_individs = sorted(population[:k], key=lambda ind: ind.fitness)
         # best_fitness = inf
@@ -215,7 +200,7 @@ class GeneticGenerationTimeTable():
                     self.best_individs[i + 1].fitness, self.best_individs[i].fitness = self.best_individs[i].fitness, self.best_individs[i+1].fitness
 
         index_min = min(range(len(self.best_individs)), key=lambda i: self.best_individs[i].fitness)
-        return self.best_individs[index_min], self.best_individs[index_min].info
+        return self.best_individs[index_min].fitness, self.best_individs[index_min].info
 
 class Individual():
     def __init__(self, data, fitness, info):
@@ -226,9 +211,17 @@ class Individual():
 class GA(QThread):
     result = pyqtSignal(list)
     progress = pyqtSignal(int)
-    def __init__(self, group_lesson, AllTeacherTimeWork, lessonID_teacherID, parLesson_group):
+    def __init__(self,  group_lesson, AllTeacherTimeWork, lessonID_teacherID, parLesson_group):
         super(GA, self).__init__()
-        self.group_lesson, self.AllTeacherTimeWork, self.lessonID_teacherID, self.parLesson_group = group_lesson, AllTeacherTimeWork, lessonID_teacherID, parLesson_group
+        self.group_lesson, self.AllTeacherTimeWork, self.lessonID_teacherID, self.parLesson_group =  group_lesson, AllTeacherTimeWork, lessonID_teacherID, parLesson_group
+        self.generation = GeneticGenerationTimeTable(self.group_lesson, self.AllTeacherTimeWork, self.lessonID_teacherID, self.parLesson_group)
+        # tt = {'ДТ 11-22': [53, 38, 91, 67, 112, 67, 92, 8, 67, 115, 124, 124, 52, None, None, 38, 81, 9, None, 81, None, 8, None, 38, 115, None, None, 91, 112, None, 24, 67, 24, 91, None, None, 67, 112, 115, None, 8, None, 24, 92, 81, 67, 53, 7], 'ИСП 11-22': [34, 113, 77, 29, 77, 34, 117, None, 29, 72, None, None, 117, 117, 99, 99, None, 100, None, None, None, 98, 29, 113, 86, None, 77, 72, 117, 99, None, 45, 45, 117, 110, 34, None, 110, None, 22, 113, 117, 110, 22, 22, 44, None, 86], 'ИСП 12-22': [None, 5, None, None, 114, 111, 121, 119, 31, 121, 49, 48, 36, 111, 31, 79, None, None, 4, 88, 119, 36, 74, 5, 31, None, 114, 114, None, 121, 121, 5, 79, None, None, 36, 6, 121, 111, None, 88, 79, 121, 74, None, None, 49, 119], 'ИСП 13-22': [78, 62, 46, 120, 101, 30, None, None, None, 120, None, None, 11, 62, 120, None, 102, 30, 35, None, 73, 118, 102, 73, 87, 11, 103, 120, 120, 78, None, 102, None, None, 87, None, None, 11, 30, 120, 118, 78, 35, 118, 62, 35, 47, 47], 'КИП 11-22': [40, 95, None, 95, 109, 83, 57, None, None, 108, None, 94, None, None, 116, 16, 69, 83, None, None, 116, 69, None, 26, 107, 108, 26, None, None, 69, 16, 108, 94, 116, 26, 56, None, 83, 40, 57, 69, 69, 16, 69, 126, 94, 40, 126], 'Р11-22': [123, None, 122, 90, 89, 37, 80, 127, 50, 23, 23, None, 122, None, 127, None, 122, 104, 105, None, None, 63, 90, 105, 63, 51, None, 89, 37, 80, 123, None, None, 122, None, 89, 122, 80, 51, None, 122, 105, None, 23, 127, 37, 106, 63], 'С11-22': [None, 27, 96, 75, None, 96, 20, 70, 60, 18, 128, 70, None, None, 97, 18, 27, 70, None, 65, 59, 19, None, 70, 65, 96, 65, 27, 75, None, 96, None, None, 19, 84, 96, 70, 128, 70, None, 41, 19, 18, None, 58, 17, 60, None], 'ТМ 11-22': [None, 32, 93, 68, 64, 39, 125, 93, 64, None, 25, 82, 32, 14, 68, 25, None, 55, 25, 39, None, 68, 82, None, 64, 32, 12, 68, 68, 14, 68, None, None, None, 125, None, 13, None, 14, 82, 13, 13, 39, None, None, 55, 15, 54], 'Э 11-22': [None, 33, 28, 21, 10, 61, 66, 61, 71, None, 76, None, 33, 61, 43, 2, 2, 66, None, 2, 28, 3, 21, None, 21, 71, 85, 66, 76, None, 33, None, 10, 85, 1, None, None, 28, 66, None, None, 42, None, 66, 76, 10, 43, 66]}
+        # print(self.generation.TimeTable_Fitness(tt))
+        # for _ in range(1000):
+        #     tt = self.generation.mutationTimeTable(tt)
+        # print(self.generation.TimeTable_Fitness(tt))
+        # ind = self.generation.random_timeTable()
+        # print(ind.timeTable)
         # generation = GeneticGenerationTimeTable(DB)
         # print(generation.TimeTable_Fitness([[34, 47, 27, 24, 31, 6, 1, 21, 38, 39, 40, 30, 7, 8, 22, 46, 18, 36, 33, 12, 4, 2, 20, 26, 10, 29, 35, 14, 0, 32, 41, 37, 5, 23, 28, 25, 11, 45, 16, 43, 15, 44, 13, 19, 3, 17, 42, 9], [18, 28, 30, 6, 35, 16, 42, 38, 0, 7, 33, 40, 19, 47, 44, 4, 11, 34, 21, 32, 36, 12, 27, 8, 1, 31, 22, 13, 23, 43, 26, 14, 29, 17, 9, 10, 2, 46, 24, 37, 15, 20, 41, 5, 39, 25, 45, 3], [26, 21, 18, 43, 23, 39, 17, 13, 3, 40, 38, 34, 32, 7, 24, 2, 27, 1, 22, 6, 31, 29, 15, 9, 0, 19, 14, 28, 12, 45, 41, 35, 8, 44, 33, 47, 46, 20, 5, 11, 36, 4, 10, 37, 30, 16, 25, 42], [25, 34, 2, 5, 6, 30, 44, 12, 29, 22, 17, 3, 42, 7, 40, 1, 43, 20, 16, 33, 47, 41, 39, 21, 4, 27, 26, 10, 36, 18, 32, 38, 46, 24, 19, 8, 9, 23, 15, 31, 14, 28, 37, 35, 11, 0, 45, 13], [39, 22, 31, 2, 46, 47, 13, 6, 4, 10, 33, 40, 25, 34, 32, 3, 1, 17, 36, 24, 44, 38, 37, 18, 23, 5, 15, 8, 27, 26, 21, 12, 20, 28, 45, 43, 11, 7, 42, 29, 0, 9, 35, 30, 14, 41, 19, 16], [40, 30, 4, 1, 45, 21, 17, 26, 43, 39, 19, 28, 32, 34, 3, 8, 22, 18, 33, 42, 20, 9, 11, 24, 6, 10, 15, 38, 16, 31, 44, 41, 0, 36, 46, 7, 27, 12, 14, 23, 25, 35, 47, 29, 13, 37, 5, 2], [17, 28, 22, 16, 20, 47, 41, 9, 36, 26, 34, 3, 21, 0, 18, 4, 25, 27, 35, 19, 2, 11, 14, 12, 1, 42, 39, 44, 15, 10, 31, 6, 38, 5, 40, 8, 37, 43, 30, 24, 32, 45, 46, 33, 7, 23, 13, 29], [7, 21, 16, 36, 45, 27, 41, 10, 12, 19, 47, 33, 15, 28, 25, 26, 35, 14, 9, 8, 24, 29, 11, 6, 17, 18, 39, 31, 42, 23, 13, 37, 2, 44, 46, 38, 30, 4, 43, 0, 3, 34, 22, 32, 40, 5, 20, 1], [5, 13, 27, 44, 32, 39, 12, 40, 33, 15, 18, 42, 34, 21, 2, 11, 0, 35, 17, 4, 36, 16, 30, 1, 38, 28, 19, 8, 3, 22, 14, 9, 10, 41, 25, 45, 20, 6, 26, 7, 29, 23, 43, 31, 46, 37, 47, 24]])[0])
         # generation.save_TimeTable_in_DB([[34, 47, 27, 24, 31, 6, 1, 21, 38, 39, 40, 30, 7, 8, 22, 46, 18, 36, 33, 12, 4, 2, 20, 26, 10, 29, 35, 14, 0, 32, 41, 37, 5, 23, 28, 25, 11, 45, 16, 43, 15, 44, 13, 19, 3, 17, 42, 9], [18, 28, 30, 6, 35, 16, 42, 38, 0, 7, 33, 40, 19, 47, 44, 4, 11, 34, 21, 32, 36, 12, 27, 8, 1, 31, 22, 13, 23, 43, 26, 14, 29, 17, 9, 10, 2, 46, 24, 37, 15, 20, 41, 5, 39, 25, 45, 3], [26, 21, 18, 43, 23, 39, 17, 13, 3, 40, 38, 34, 32, 7, 24, 2, 27, 1, 22, 6, 31, 29, 15, 9, 0, 19, 14, 28, 12, 45, 41, 35, 8, 44, 33, 47, 46, 20, 5, 11, 36, 4, 10, 37, 30, 16, 25, 42], [25, 34, 2, 5, 6, 30, 44, 12, 29, 22, 17, 3, 42, 7, 40, 1, 43, 20, 16, 33, 47, 41, 39, 21, 4, 27, 26, 10, 36, 18, 32, 38, 46, 24, 19, 8, 9, 23, 15, 31, 14, 28, 37, 35, 11, 0, 45, 13], [39, 22, 31, 2, 46, 47, 13, 6, 4, 10, 33, 40, 25, 34, 32, 3, 1, 17, 36, 24, 44, 38, 37, 18, 23, 5, 15, 8, 27, 26, 21, 12, 20, 28, 45, 43, 11, 7, 42, 29, 0, 9, 35, 30, 14, 41, 19, 16], [40, 30, 4, 1, 45, 21, 17, 26, 43, 39, 19, 28, 32, 34, 3, 8, 22, 18, 33, 42, 20, 9, 11, 24, 6, 10, 15, 38, 16, 31, 44, 41, 0, 36, 46, 7, 27, 12, 14, 23, 25, 35, 47, 29, 13, 37, 5, 2], [17, 28, 22, 16, 20, 47, 41, 9, 36, 26, 34, 3, 21, 0, 18, 4, 25, 27, 35, 19, 2, 11, 14, 12, 1, 42, 39, 44, 15, 10, 31, 6, 38, 5, 40, 8, 37, 43, 30, 24, 32, 45, 46, 33, 7, 23, 13, 29], [7, 21, 16, 36, 45, 27, 41, 10, 12, 19, 47, 33, 15, 28, 25, 26, 35, 14, 9, 8, 24, 29, 11, 6, 17, 18, 39, 31, 42, 23, 13, 37, 2, 44, 46, 38, 30, 4, 43, 0, 3, 34, 22, 32, 40, 5, 20, 1], [5, 13, 27, 44, 32, 39, 12, 40, 33, 15, 18, 42, 34, 21, 2, 11, 0, 35, 17, 4, 36, 16, 30, 1, 38, 28, 19, 8, 3, 22, 14, 9, 10, 41, 25, 45, 20, 6, 26, 7, 29, 23, 43, 31, 46, 37, 47, 24]])
@@ -243,78 +236,67 @@ class GA(QThread):
 
     def run(self):
         # константы генетического алгоритма
-        generation = GeneticGenerationTimeTable(self.group_lesson, self.AllTeacherTimeWork, self.lessonID_teacherID, self.parLesson_group)
         print('start generate')
-        print('fitness')
-        # print(generation.TimeTable_Fitness({'ИСП11-23': [7, 5, 7, 7, None, 5, 5, 7, None, 5, 7, 7, None, None, 5, 7, None, 5, 5, None, 7, 7, 7, 7, 7, 5, 7, 5, None, 5, 5, None, 7, 5, None, None, 7, 7, 5, 5, None, None, 5, 5, 7, 5, 7, 5], 'ИСП12-23': [None, 8, 5, 5, 8, 8, 8, 5, 5, 8, None, None, None, 8, 8, 5, 8, 5, 8, 5, None, None, 5, 5, None, 8, 5, 8, None, 5, 8, 5, 5, 8, None, None, None, 5, 8, 8, 8, 5, 5, 5, None, 8, 5, 8]}))
-        # print(generation.TimeTable_Fitness({'ИСП11-23': [5, 5, None, None, None, 5, 5, 5, None, 5, 5, 5, None, 5, 5, 5, 5, 5, 5, None, 5, 5, 5, 5, 5, 5, 5, None, 5, 5, 5, 5, 5, 5, None, None, None, None, 5, 5, 5, 5, 5, 5, None, 5, 5, 5], 'ИСП12-23': [5, 5, 5, 5, 5, 5, None, None, None, None, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, None, None, None, 5, 5, 5, None, None, 5, 5, None, 5, 5, 5, 5, 5, 5, 5, None, 5, 5, None, 5, 5, 5, 5]}))
-        # print(generation.TimeTable_Fitness({'ИСП11-23': [5,5,5,None]*12, 'ИСП12-23': [5,5,5,None]*12}))
-        # print(generation.TimeTable_Fitness({'ИСП11-23': [5, 5, 5, None, 5, None, None, 5, 5, 5, 5, None, 5, 5, 5, None, 5, 5, 5, 5, None, 5, 5, 5, None, None, 5, 5, None, 5, 5, 5, None, 5, 5, 5, None, 5, 5, 5, 5, 5, 5, None, 5, 5, 5, 5], 'ИСП12-23': [None, None, 5, 5, 5, 5, 5, None, 5, 5, 5, 5, 5, 5, 5, None, 5, 5, 5, None, None, 5, 5, None, None, None, 5, 5, None, 5, 5, 5, 5, 5, 5, 5, None, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, None]}))
-        print(generation.TimeTable_Fitness({'ДТ 11-22': [91, 92, 92, None, None, 38, 8, 91, 67, 7, 24, None, None, 115, 115, None, 53, 67, 124, None, 38, 81, 67, 9, 67, 81, 24, None, 81, 8, 124, 91, None, 52, 24, None, 67, 53, 38, None, 112, 67, 8, None, 112, 115, 112, None], 'ИСП 11-22': [77, 77, None, None, None, 72, 117, 117, 117, 117, 44, None, None, 86, 45, 110, None, 98, 99, 29, 113, 72, 22, 34, 113, 110, 86, 29, None, 22, 99, None, 117, 117, 29, 45, None, 100, 77, 34, 22, 110, 99, None, None, 34, 113, None], 'ИСП 12-22': [119, 119, 36, 114, None, 4, 88, None, 119, 48, 5, 79, None, None, 111, 49, 121, 74, 31, None, None, 31, 74, 49, 88, 114, 111, None, None, 79, 6, None, None, 31, 121, 121, None, 79, 121, 121, 5, 5, 36, None, 121, 111, 36, 114], 'ИСП 13-22': [102, 102, 30, 11, None, None, 35, 11, 120, 118, None, None, 47, 120, 78, 35, None, 87, 87, 101, None, 120, 35, 120, 78, 73, 30, 62, 62, 62, 47, 11, 30, 102, None, None, 120, 120, 103, None, 46, 118, 118, None, 73, 78, None, None], 'КИП 11-22': [69, 16, 116, None, None, 108, 69, None, None, 108, 108, 126, 107, 109, 40, 69, 83, 40, 26, 94, None, 116, 16, None, None, 69, 116, 26, 57, 126, 69, None, None, 95, 83, None, 94, 69, 95, None, None, 16, 83, 94, 40, 57, 56, 26], 'Р11-22': [122, 37, 122, 37, 106, 127, 127, 127, None, 123, 90, 89, None, 80, 122, 122, 37, 123, None, None, None, 50, 122, None, None, None, 63, 80, None, 90, 89, 104, 105, 23, 51, None, 105, 89, 23, None, 80, 63, 63, 105, None, 122, 23, 51], 'С11-22': [20, 70, 18, None, 19, 70, 75, None, 27, 70, 65, None, 65, 58, 96, None, None, None, 70, 19, 84, 70, 60, 27, 41, 96, 18, 96, 19, 18, 17, None, None, None, 96, 97, 60, 27, 128, 128, None, 59, 70, 65, None, 75, 96, None], 'ТМ 11-22': [32, 125, None, None, None, 25, 55, 39, None, None, 125, 64, 82, 14, 14, 13, None, 32, 13, 25, 68, 15, 32, 68, None, 39, 39, 12, 93, 55, 25, 54, None, 64, 68, None, None, 14, 68, None, None, 82, 13, 68, 82, 93, 68, 64], 'Э 11-22': [None, 28, 66, 28, 21, 10, 10, 42, 43, 21, 76, None, None, 61, 66, None, None, 76, 71, 43, None, 33, 2, 28, None, None, 71, 33, 66, 66, None, None, 85, 76, 61, 66, None, 2, 1, 10, None, 21, 85, 33, 2, 3, 61, 66]}))
-
-        # print('res st')
-        # print(generation.TimeTable_Fitness({'ИСП11-23': [None, None, 5, 5, 5, 5, None, None, 5, 5, 5, 5, 5, 5, 5, 5, None, 5, 5, 5, None, 5, 5, 5, None, None, 5, 5, 5, 5, 5, 5, 5, 5, 5, None, None, 5, 5, 5, 5, 5, 5, None, 5, 5, 5, None], 'ИСП12-23': [None, None, 5, 5, 5, 5, None, None, 5, 5, 5, 5, 5, 5, 5, 5, None, 5, 5, 5, None, 5, 5, 5, None, None, 5, 5, 5, 5, 5, 5, 5, 5, 5, None, None, 5, 5, 5, 5, 5, 5, None, 5, 5, 5, None]}))
-        # print('res')
-        # l = {'123':[1] * 12 + [0] * 12 + [1] * 12 + [0] * 12}
-        # for _ in range(100):
-        #     print(l:=generation.mutationTimeTable(l))
-        # print(generation.TimeTable_Fitness({'ИСП11-23': [None, 11, None, 14, None, 14, 11, None, 14, 14, 14, None, 11, 11, 14, 14, 14, 14, 11, None, 11, 11, 11, 11, 11, None, None, 11, 14, 11, 11, 11, 11, 11, 11, 11, None, 14, 14, None, None, 14, 14, None, None, 14, 11, 11], 'ИСП12-23': [12, 12, 12, 14, 12, 14, None, None, 14, 14, 14, None, 12, 12, 12, 14, 14, 14, 12, None, 12, 12, None, None, 12, 12, 12, None, 14, 12, None, None, 12, 12, None, None, 12, 14, 12, None, 12, 14, 14, 12, None, 14, 12, 12]}))
-        POPULATION_SIZE = 60       # количество индивидуумов в поп
-        P_CROSSOVER = 0.4         # вероятность скрещивания
+        generation = self.generation
+        POPULATION_SIZE = 60       # количество индивидуумов в популяции
+        P_CROSSOVER = 0.4          # вероятность скрещивания
         P_MUTATION = 0.2           # вероятность мутации индивидуума
         k = 3   # участников в турнире
         population = [generation.random_timeTable() for _ in range(POPULATION_SIZE)]
         count = 0
         t = Timer()
         start_best_fitness, info = generation.save_best_individ(population=population, k=0)  # сохранение лучшего индивида
-        start_best_fitness = start_best_fitness.fitness
         fitness_for_reduction_crossover = start_best_fitness // (P_CROSSOVER*100)     # через определенную приспоcобленность уменьшать шанс скрещивания
         poin_fitness_reduction_crossover = start_best_fitness-fitness_for_reduction_crossover     # отметка уменьшения скрещивания
         best_fitness = start_best_fitness
-        print(list(map(lambda x: x.timeTable, population)))
-        print(fitness_for_reduction_crossover, start_best_fitness, poin_fitness_reduction_crossover)
-
+        # print(fitness_for_reduction_crossover, start_best_fitness, poin_fitness_reduction_crossover)
+        mut = True
         while best_fitness >= 1:
             self.progress.emit(int((1-int(best_fitness)/int(start_best_fitness))*100))
-            for ind1 in range(1, len(population)):    # скрещивание
-                if random.random() < P_CROSSOVER:
-                    # ind1, ind2 = random.sample(range(len(population)), 2)
-                    ind2 = ind1-1
-                    new_individ_1, new_individ_2 = generation.cxOrder(ind1=population[ind1].timeTable, ind2=population[ind2].timeTable)
-                    individ = Individual(new_individ_1, generation.TimeTable_Fitness(new_individ_1), info='Скрещивание')
-                    population.append(individ)
-                    individ = Individual(new_individ_2, generation.TimeTable_Fitness(new_individ_2), info='Скрещивание')
-                    population.append(individ)
+            if mut:
+                for ind1 in range(1, len(population)):    # скрещивание
+                    if random.random() < P_CROSSOVER:
+                        # ind1, ind2 = random.sample(range(len(population)), 2)
+                        ind2 = ind1-1
+                        new_individ_1, new_individ_2 = generation.cxOrder(ind1=population[ind1].timeTable, ind2=population[ind2].timeTable)
+                        individ = Individual(new_individ_1, generation.TimeTable_Fitness(new_individ_1), info='Скрещивание')
+                        population.append(individ)
+                        individ = Individual(new_individ_2, generation.TimeTable_Fitness(new_individ_2), info='Скрещивание')
+                        population.append(individ)
+
             for i in range(len(population)):    # мутация
                 if random.random() < P_MUTATION:
                     mutation_individ = generation.mutationTimeTable(population[i].timeTable)
                     individ = Individual(mutation_individ, generation.TimeTable_Fitness(mutation_individ), info='Мутация')
                     population.append(individ)
 
-            ind, info = generation.save_best_individ(population=population, k=3) # сохранение лучшего индивида
-            best_fitness = ind.fitness
+            best_fitness, info = generation.save_best_individ(population=population, k=3) # сохранение лучшего индивида
             population = generation.tournament_selection(population=population, k=k,  num_parents=POPULATION_SIZE)  # отбор
             count += 1
 
             if best_fitness < poin_fitness_reduction_crossover: # постепенно уменьшаем скрещивание, а мутацию увеличиваем тк под конец скрещивание не эффективно
-                P_CROSSOVER -= 0.01
-                P_MUTATION += 0.01
-                # if P_CROSSOVER == 0 or P_MUTATION == 1 or P_MUTATION == 0.6:
-                # print(round(P_MUTATION, 3), round(P_CROSSOVER, 3), round(best_fitness, 3), t.end())
+                P_CROSSOVER -= 0.011
+                P_MUTATION += 0.015
                 poin_fitness_reduction_crossover -= fitness_for_reduction_crossover
-            print('#', count, round(best_fitness, 3), t.end())
-            print(ind.timeTable)
+                if P_MUTATION <= 0:
+                    mut = False
+            # pass
+            # if best_fitness <= 100 and P_CROSSOVER == 0.4:
+            #     P_CROSSOVER = 0
+            #     P_MUTATION = 0.6
+            # if t.end() >= 31:
+            #     index_min = min(range(len(population)), key=lambda i: population[i].fitness)
+            #     min_individ = population[index_min]
+            #     best_fitness = min_individ.fitness
+            print('#', count, round(best_fitness, 3), t.end(), round(P_MUTATION, 2), round(P_CROSSOVER, 2))
 
-        print('#', count, round(best_fitness, 3), t.end())
+        print(t.end(), count)
         index_min = min(range(len(population)), key=lambda i: population[i].fitness)
         min_individ = population[index_min]
         # generation.save_TimeTable_in_DB(min_individ.timeTable)
         self.result.emit(generation.get_TimeTable_for_save(min_individ.timeTable))
-        # print(min_individ.timeTable)
-
-
-
         # self.progress.emit(100)
+        print(min_individ.timeTable)
 
         #     middle_time += t.end()
         #     l = sorted([round(ind.fitness, 3) for ind in population])
@@ -955,6 +937,3 @@ class GA(QThread):
 
 # 18108 0.099 772.37
 # 772.37 18108
-
-# 613173 5.105 28782.53
-
